@@ -599,14 +599,30 @@ st.markdown(
   Most LFP cells knee below 70% SoH — our 70% EOL sits on the safe
   side of that transition, so the omission is not load-bearing for
   stated-life numbers.
-- **Pack effects.** Cell-to-cell spread is parametric (Severson 2019
-  CoV 8%). Thermal gradients across modules and string-level imbalance
-  are captured in the lever chart as a weakest-cell proxy — effective
-  DoD and SoC dwell shifted by the observed spread — but not from a
-  first-principles pack model. Field data anchors the span: pack fade
-  runs ~10–20% faster than best-cell fade (Schimpe 2018; Reniers 2019).
-  The operator lever is monitoring discipline and intervention cadence
-  with OEM, not BMS spec (set at LTSA signing).
+- **Cell-internal temperature.** `mean_temp_C` is taken as the
+  cell-internal temperature the caller has already computed. A
+  per-preset `self_heating_coeff_C_per_C2` hook exists (off by default
+  for every shipped preset) that raises the cycle-channel Arrhenius to
+  `T_amb + coeff · C²` when enabled. All charts in this note pass
+  cell-internal T directly — at high C-rate on a hot site, ambient
+  should be adjusted up ≈5–10 °C for 2C prismatic LFP or the
+  self-heating hook enabled. The calendar integration stays at
+  storage temperature (active-cycling is <20% of wall-clock hours).
+- **Pack effects.** Cell-to-cell spread is parametric, split across
+  cycle and calendar channels (both at Severson 2019 CoV 8%, combined
+  in quadrature per channel-independence assumption). Thermal gradients
+  across modules and string-level imbalance are captured in the lever
+  chart as a weakest-cell proxy — effective DoD and SoC dwell shifted
+  by the observed spread — but not from a first-principles pack model.
+  Field data anchors the span: pack fade runs ~10–20% faster than
+  best-cell fade (Schimpe 2018; Reniers 2019). A proper pack-mode
+  extension (RC thermal network × string × module topology × BMS
+  isolation policy) is a separate roadmap item gated on per-string
+  operational telemetry, not currently in the public lib. The operator
+  lever here is monitoring discipline and intervention cadence with
+  OEM, not BMS spec (set at LTSA signing). For warranty/insurance
+  floors use `return_kind="min"` on the Monte Carlo projection rather
+  than the default `"pack"` p10.
 - **Augmentation.** Out of scope. Augmentation is a commercial decision
   about when to inject fresh capacity — not a degradation mechanism —
   and mixing the two gives a SoH curve with stair-steps that hide what
