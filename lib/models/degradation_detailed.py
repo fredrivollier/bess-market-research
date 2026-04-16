@@ -434,7 +434,11 @@ def project_capacity_detailed(
     """Capacity fraction with cell-to-cell variation.
 
     ``return_kind``:
-      - ``"pack"``   — 10th percentile (weakest-decile-drives-pack convention).
+      - ``"pack"``   — 10th percentile (weakest-decile-drives-pack convention,
+        default for revenue-attenuating capacity estimates).
+      - ``"min"``    — sample minimum (weakest-cell-drives-pack, worst-case
+        convention — use for warranty floor / insurance / EOL estimates where
+        BMS isolates the weakest module).
       - ``"median"`` — 50th percentile.
       - ``"distribution"`` — returns 3-tuple ``(p10, p50, p90)``.
     """
@@ -449,6 +453,8 @@ def project_capacity_detailed(
     p10, p50, p90 = np.percentile(samples, [10, 50, 90])
     if return_kind == "pack":
         return float(p10)
+    if return_kind == "min":
+        return float(samples.min())
     if return_kind == "median":
         return float(p50)
     if return_kind == "distribution":

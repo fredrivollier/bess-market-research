@@ -101,6 +101,21 @@ def test_pack_percentile_below_median():
     assert p10 <= p50 <= p90
 
 
+def test_return_kind_min_below_p10():
+    """``min`` must return a value no larger than ``pack`` (p10) for the same seed.
+    Sanity check for warranty/insurance paths that need worst-cell SoH, not
+    weakest-decile."""
+    preset = PRESETS["eve_lf280k"]
+    duty = _baseline_duty()
+    pack = project_capacity_detailed(
+        duty, years=10.0, preset=preset, n_mc=500, return_kind="pack", rng=np.random.default_rng(0)
+    )
+    mn = project_capacity_detailed(
+        duty, years=10.0, preset=preset, n_mc=500, return_kind="min", rng=np.random.default_rng(0)
+    )
+    assert mn <= pack
+
+
 def test_duty_from_timeseries_roundtrip():
     rng = np.random.default_rng(0)
     soc = rng.uniform(0.2, 0.9, size=8760)
