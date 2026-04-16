@@ -292,11 +292,12 @@ afternoon topped up at 85% waiting for the morning peak has a high
 rest SoC; one that idles near 50% (FCR-style) has a low one.
 
 Raising rest SoC from 55% to 75% costs meaningful NPV with *zero*
-extra cycles — that is pure calendar aging, the Naumann SoC³ term
-doing its work (stress on lithium plating scales with the cube of how
-far the cell sits above 50%). FCR-heavy operators who sit near 50% by
-protocol get this for free. Arbitrage operators who end the day at 85%
-are paying for it, and no cycle counter will flag it.
+extra cycles — that is pure calendar aging, the Naumann SoC-cubic term
+doing its work (plating stress rises with a linear + cubic combination
+of how far the cell sits above the 50% thermodynamic midpoint). FCR-heavy
+operators who sit near 50% by protocol get this for free. Arbitrage
+operators who end the day at 85% are paying for it, and no cycle counter
+will flag it.
 
 **Chemistry is a ceiling, not a strategy.** The cell datasheet sets the
 physics headroom; the schedule decides how much of it survives to year
@@ -774,7 +775,7 @@ Q_{\text{loss,cyc}} = B_{\text{cyc}} \cdot \exp\!\left(-\frac{E_{a,\text{cyc}}}{
 $$
 
 $$
-Q_{\text{loss,cal}} = \sum_{b \in \text{SoC buckets}} \frac{h_b}{8760} \cdot k_{\text{cal}}(\text{SoC}_b) \cdot t^{\beta_{\text{cal}}} \cdot \exp\!\left(-\frac{E_{a,\text{cal}}}{R T}\right)
+Q_{\text{loss,cal}} = \left[\sum_{s} \frac{h_s}{8760} \cdot k_{\text{cal}}(s)\right] \cdot t^{\beta_{\text{cal}}} \cdot \exp\!\left(-\frac{E_{a,\text{cal}}}{R T}\right)
 $$
 
 $$
@@ -785,12 +786,27 @@ $$
 \text{SoH}(t) = 1 - Q_{\text{loss,cyc}} - Q_{\text{loss,cal}} - \varepsilon_{\text{cell}}
 $$
 
-Cycle term: Wang, Liu, Kloess 2011 LFP power law, Ea from LFP/graphite
-literature. Calendar term: Naumann et al. 2018 LFP calendar model with
-SoC-cubic dependence, $k_{\text{cal}}(\text{SoC}) = C \cdot (\text{SoC}-0.5)^3 + D$.
-SoC enters through bucketed hours/year — the integration that captures
-"high-SoC dwell hurts" without needing a full timeseries. CoV 0.08
-from Severson 2019 cell-to-cell spread measurements.
+Cycle term: Wang, Liu, Kloess 2011 LFP Arrhenius + power-law form.
+FEC exponent $z_{\text{cyc}} = 1$ (near-linear) from Naumann 2020 / Sarasketa-Zabala
+2014 LFP stationary-duty fits rather than Wang's $z \approx 0.55$, which produces
+year-1 front-loading inconsistent with LFP field data.
+
+Calendar term: Naumann et al. 2018 LFP calendar model with SoC-cubic dependence
+above the thermodynamic midpoint,
+
+$$
+k_{\text{cal}}(\text{SoC}) = a + b \cdot u + c \cdot u^3, \quad u = \max(\text{SoC} - 0.5, 0)
+$$
+
+flat below SoC=0.5 (no calendar acceleration below the midpoint), rising
+monotonically above it. Default coefficients $(a, b, c) = (0.60, 2.694, -1.218)$
+reproduce the legacy 3-bucket averages $\{0.60, 1.00, 1.60\}$ at midpoints
+$\{0.25, 0.65, 0.90\}$ so existing calibrations are numerically invariant;
+Trina's multi-anchor override $\{0.45, 1.00, 1.80\}$ resolves to
+$(0.45, 3.716, -2.127)$. Caller supplies either a bucket histogram or a finer
+SoC histogram; both paths run through the same continuous evaluator.
+
+CoV 0.08 from Severson 2019 cell-to-cell spread measurements.
 """
     )
 
