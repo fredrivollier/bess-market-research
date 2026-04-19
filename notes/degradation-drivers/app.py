@@ -606,21 +606,11 @@ else:
 col_a, col_b = st.columns([2, 1])
 with col_a:
     f = go.Figure()
-    # Truncate model traces at EOL — below 70 % SoH the two-channel kernel
-    # stops being reliable (LAM knee not modelled). The dashed red segment
-    # added further down covers that region illustratively.
-    _valid = soh_df[soh_df["p50"] >= eol - 1e-6].copy()
-    if len(_valid) > 0 and len(_valid) < len(soh_df):
-        # Anchor the last valid point exactly at EOL so the main trace ends
-        # cleanly at 70 % rather than hanging a little above or below.
-        _anchor_x = float(np.interp(eol, soh_df["p50"][::-1], soh_df["year"][::-1]))
-        _anchor = pd.DataFrame([[_anchor_x, eol, eol, eol]], columns=_valid.columns)
-        _valid = pd.concat([_valid, _anchor], ignore_index=True)
-    f.add_trace(go.Scatter(x=_valid["year"], y=_valid["p50"], name="median (model)", line=dict(color="#0b5fff")))
+    f.add_trace(go.Scatter(x=soh_df["year"], y=soh_df["p50"], name="median", line=dict(color="#0b5fff")))
     f.add_trace(
         go.Scatter(
-            x=np.concatenate([_valid["year"], _valid["year"][::-1]]),
-            y=np.concatenate([_valid["p90"], _valid["p10"][::-1]]),
+            x=np.concatenate([soh_df["year"], soh_df["year"][::-1]]),
+            y=np.concatenate([soh_df["p90"], soh_df["p10"][::-1]]),
             fill="toself",
             fillcolor="rgba(11,95,255,0.15)",
             line=dict(color="rgba(0,0,0,0)"),
@@ -628,57 +618,10 @@ with col_a:
         )
     )
     f.add_hline(y=eol, line_dash="dot", line_color="#888", annotation_text=f"EOL {int(eol*100)}%")
-
-    # Illustrative knee: past 70 % SoH the physics model stops being reliable
-    # (LAM kicks in, fade accelerates). Shown as a quadratic-drop curve with
-    # an uncertainty band — this is a schematic, not a model output.
-    if not np.isnan(years_to_eol) and years_to_eol < 19.5:
-        knee_start = years_to_eol
-        horizon = min(2.5, 20.0 - knee_start)
-        knee_t = np.linspace(0.0, horizon, 30)
-        knee_x = knee_start + knee_t
-        # Carry pre-knee slope and add quadratic acceleration (super-linear LAM).
-        pre_slope = max((1.0 - eol) / max(knee_start, 0.5), 0.02)
-        knee_y = eol - pre_slope * knee_t - 0.06 * knee_t ** 2
-        # Uncertainty band: knee onset year varies cell-to-cell, slope varies.
-        drop = np.maximum(eol - knee_y, 0.0)
-        knee_y_hi = np.clip(eol - 0.55 * drop, 0.0, eol)
-        knee_y_lo = np.clip(eol - 1.45 * drop, 0.0, eol)
-
-        f.add_trace(go.Scatter(
-            x=np.concatenate([knee_x, knee_x[::-1]]),
-            y=np.concatenate([knee_y_hi, knee_y_lo[::-1]]),
-            fill="toself",
-            fillcolor="rgba(193,90,90,0.15)",
-            line=dict(color="rgba(0,0,0,0)"),
-            showlegend=False,
-            hoverinfo="skip",
-        ))
-        f.add_trace(go.Scatter(
-            x=knee_x, y=knee_y,
-            mode="lines",
-            line=dict(color="#c15a5a", width=2.2, dash="dot"),
-            name="illustrative knee (LAM)",
-            hovertemplate=(
-                "<b>Illustrative</b>, not modelled<br>"
-                "Past 70 %% SoH active material loss kicks in and fade accelerates "
-                "super-linearly. Exact shape is cell-specific.<extra></extra>"
-            ),
-        ))
-        _tip_idx = int(len(knee_x) * 0.75)
-        f.add_annotation(
-            x=knee_x[_tip_idx], y=knee_y[_tip_idx],
-            text="<i>LAM acceleration<br>(illustrative, not modelled)</i>",
-            showarrow=False,
-            xanchor="left", yanchor="top",
-            font=dict(size=10, color="#c15a5a"),
-            xshift=10, yshift=-4,
-        )
-
     f.update_layout(
         xaxis_title="years",
         yaxis_title="SoH",
-        yaxis=dict(range=[0.4, 1.0]),
+        yaxis=dict(range=[0.5, 1.0]),
         height=360,
         margin=dict(l=10, r=10, t=10, b=10),
     )
@@ -700,8 +643,7 @@ st.caption(
     "80% DoD cycle discharges 80 MWh — wear bill ~€2.4k. "
     "Schimpe 2018 benchmarked ~13 €/MWh at 2018-era CAPEX (~€80/kWh); at today's €180/kWh the "
     "same arithmetic gives ~€30/MWh. Values well above that signal a pack working itself to "
-    "death faster. The <span style='color:#c15a5a'>dashed red segment past 70 % SoH</span> is "
-    "illustrative, not a model output — LAM kicks in, fade accelerates (see methodology)."
+    "death faster."
 )
 
 # ── Methodology ─────────────────────────────────────────────
