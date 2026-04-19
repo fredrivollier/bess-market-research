@@ -830,8 +830,8 @@ with st.expander("Literature table"):
 | TU Munich — *[SimSES: open-source techno-economic simulation of stationary energy storage](https://gitlab.lrz.de/open-ees-ses/simses)* | Parity anchor for the Naumann kernel |
 | Xu et al. 2018 — *[Modeling of Lithium-Ion Battery Degradation for Cell Life Assessment](https://doi.org/10.1109/TSG.2016.2578950)* (IEEE TSG) | DoD super-linear exponent |
 | Schimpe et al. 2018 — *[Comprehensive Modeling of Temperature-Dependent Degradation Mechanisms in Lithium Iron Phosphate Batteries](https://doi.org/10.1149/2.1181714jes)* (J. Electrochem. Soc.) | LFP flat-cost benchmark (~12.8 €/MWh) |
-| Preger et al. 2020 — *[Degradation of Commercial Lithium-Ion Cells as a Function of Chemistry and Cycling Conditions](https://www.batteryarchive.org/snl_study.html)* (Sandia / batteryarchive.org) | SNL 18650 LFP cycling dataset (out-of-sample tripwire) |
-| Lam et al. 2024 — *[Stanford Long-Term Calendar Aging Dataset](https://osf.io/ju325/)* (Joule / OSF) | K2 18650 LFP calendar dataset (out-of-sample tripwire) |
+| Preger et al. 2020 — *[Degradation of Commercial Lithium-Ion Cells as a Function of Chemistry and Cycling Conditions](https://www.batteryarchive.org/snl_study.html)* (Sandia / batteryarchive.org) | SNL 18650 LFP cycling dataset |
+| Lam et al. 2024 — *[Stanford Long-Term Calendar Aging Dataset](https://osf.io/ju325/)* (Joule / OSF) | K2 18650 LFP calendar dataset |
 | Humiston, Cetin, de Queiroz 2026 — *[Evaluating Battery Degradation Models in Rolling-Horizon BESS Arbitrage Optimization](https://www.mdpi.com/1996-1073/19/4/1056)* (Energies) | Model-choice sensitivity in BESS valuation |
 """
     )
