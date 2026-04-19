@@ -2,9 +2,6 @@
 Battery degradation model — calendar and cycle ageing (simple closed-form).
 
 This module is the **fast approximation** of the production degradation model.
-It preserves the legacy closed-form SoH(t) that Notes 1, 2, and Best-Days rely
-on, while adding a `CellPreset` layer so each duty/chemistry combination has
-a single identity that travels across the library.
 
 For the production Wang 2011 + Naumann 2018 model with Monte Carlo cell-to-cell
 variation see ``lib.models.degradation_detailed``. The two are kept in parity
@@ -88,7 +85,16 @@ class CellPreset:
     source_url: str
     # Wang 2011 cycle term
     k_cyc: float                  # calibrated per preset
-    alpha_cyc: float              # DoD super-linear exponent (empirical)
+    alpha_cyc: float              # SIMPLE-MODEL cycle-ratio exponent used by
+                                  # ``project_capacity_simple``
+                                  # (SoH ∝ cycle_ratio ^ alpha_cyc). NOT the
+                                  # detailed model's DoD super-linear exponent
+                                  # — that is hard-coded at 0.5 inside
+                                  # ``degradation_detailed._f_dod_extra`` as
+                                  # the Xu 2018 / empirical multiplier. Keeping
+                                  # both knobs under one name was a source of
+                                  # confusion; they are orthogonal: alpha_cyc
+                                  # shapes the simple closed-form only.
     z_cyc: float                  # FEC exponent (Wang)
     Ea_cyc_eV: float              # activation energy, cycle channel
     c_rate_exponent: float        # C-rate stress exponent (1.0 = Wang linear)
@@ -125,10 +131,16 @@ class CellPreset:
     ref_fec: float                # reference FEC for cycle term
     cal_life_years: float         # calendar life at anchor
     # Honest calibration tag — one of:
-    #   "multi_anchor"            — ≥2 independent datasheet anchors
-    #   "single_anchor_datasheet" — one lab/datasheet anchor
-    #   "single_anchor_marketing" — one brochure/marketing anchor only
-    #   "synthetic"               — internal fleet-average, not a real cell
+    #   "multi_anchor"                   — ≥2 independent, publicly-reproducible
+    #                                      datasheet anchors
+    #   "multi_anchor_partial_private"   — ≥2 anchors, but at least one comes
+    #                                      from a private source not quoted at
+    #                                      ``source_url``; see the preset's
+    #                                      ``notes`` for the provenance split
+    #   "single_anchor_datasheet"        — one lab/datasheet anchor
+    #   "single_anchor_marketing"        — one brochure/marketing anchor only
+    #   "synthetic"                      — internal fleet-average, not a real
+    #                                      cell
     calibration_status: str = "single_anchor_datasheet"
     # Per-preset calendar SoC weights (overrides shared Naumann defaults).
     # ``None`` → use shared ``_soc_bucket_k_cal`` from degradation_detailed.
@@ -158,7 +170,8 @@ _LFP_DEFAULTS = dict(
     # baseline duty (parity 0pp, see ``test_simple_detailed_parity``).
     alpha_cyc=1.00,
     # z_cyc = 1.0 (linear-in-FEC cycle loss) for stationary LFP/graphite duty.
-    # Wang, Liu, Kloess 2011 fit z≈0.55 on A123 ANR26650 LFP cells, but that
+    # Wang, Liu, Hicks-Garner et al. 2011 (J. Power Sources 196, 3942–3948;
+    # doi:10.1016/j.jpowsour.2010.11.134) fit z≈0.55 on A123 ANR26650 LFP cells, but that
     # exponent produces a concave-in-FEC trajectory that front-loads ~25% of
     # lifetime cycle loss into year 1 — inconsistent with stationary BESS field
     # data at moderate C-rate. Naumann 2020 LFP cycle-aging refinement and
@@ -189,7 +202,7 @@ PRESETS: Dict[str, CellPreset] = {
             "https://www.battery-germany.de/wp-content/uploads/2022/02/"
             "LF280K-280Ah-Product-Specification-Version-B.pdf"
         ),
-        # Fit to 25°C anchor with literature-grounded k_cal (see Trina validation).
+        # Fit to 25°C anchor with literature-grounded k_cal (see trina_elementa_280ah).
         # The datasheet 45°C/2500 cycle point is a combined (cycle+accelerated-calendar)
         # endurance test; our two-channel separation diverges ~13pp there, documented
         # as an honest known limitation — not a fit target.
@@ -246,16 +259,21 @@ PRESETS: Dict[str, CellPreset] = {
     "byd_mc_cube_t": CellPreset(
         name="byd_mc_cube_t",
         manufacturer="BYD",
+        # Product-identity page. It does NOT itself carry the 12000/80% or
+        # 8000/70% numbers below — those come from BYD's MC Cube-T brochure
+        # and commercial retention curve shown in LTSA discussions, neither
+        # of which is hosted at a stable public URL. Logged in the preset's
+        # ``notes`` as ``single_anchor_marketing``.
         source_url="https://www.bydenergy.com/en/productDetails/Utility-Scale/MC_Cube-T_BESS",
         k_cyc=2.2940e-5,
         k_cal=0.048,
         test_anchor=TestAnchor(
             cycles=12000, dod=1.00, c_rate=0.5, temp_C=25.0, retention=0.80,
-            source="BYD MC Cube-T product page (marketing claim, no test footer)",
+            source="BYD MC Cube-T brochure (marketing claim, no test footer; not on product page)",
         ),
         warranty_anchor=WarrantyAnchor(
             cycles=8000, dod=0.90, retention=0.70,
-            source="MC Cube-T datasheet retention curve (commercial)",
+            source="MC Cube-T commercial retention curve (LTSA-typical, not public)",
         ),
         cal_budget=0.2062,
         cycle_budget=0.1376,
@@ -263,10 +281,14 @@ PRESETS: Dict[str, CellPreset] = {
         cal_life_years=20.0,
         calibration_status="single_anchor_marketing",
         notes=(
-            "Single marketing anchor (12000 cls / 80% SoH). No calendar data. Warranty "
-            "curve used as conservative tornado bound only. Treat retention numbers from "
-            "this preset as the most optimistic of the four LFP presets — the marketing "
-            "anchor assumes near-ideal conditions."
+            "Single marketing anchor (12000 cls / 80% SoH). No calendar data. The "
+            "``source_url`` is BYD's product-identity page; it does NOT itself quote "
+            "the 12000/80% or 8000/70% numbers — those come from the MC Cube-T "
+            "brochure and commercial retention curve surfaced in LTSA-style "
+            "discussions, neither of which has a stable public URL. Warranty curve "
+            "used as conservative tornado bound only. Treat retention numbers from "
+            "this preset as the most optimistic of the four LFP presets — the "
+            "marketing anchor assumes near-ideal conditions."
         ),
         **_LFP_DEFAULTS,
     ),
@@ -274,17 +296,16 @@ PRESETS: Dict[str, CellPreset] = {
         name="trina_elementa_280ah",
         manufacturer="Trina Storage",
         source_url="https://www.trinasolar.com/en-apac/storage/elementa",
-        # Multi-anchor calibration:
-        #   cycle:    10000 cls @ 25°C/0.5P/1.0 DoD → 70% SoH
-        #   calendar: 100% SoC / 25°C / 10000 days → 70% retention
-        #             40%  SoC / 25°C / 2 years    → ≥98% retention
-        # Calendar SoC weights fitted to the high/low storage anchor ratio (~4.0),
-        # steeper than Naumann 2018 defaults (~2.67).
+        # Multi-anchor calibration, mixed public/private provenance:
+        #   cycle (public):    10000 cls @ 25°C/0.5P/1.0 DoD → 70% SoH,
+        #                      from Trina Elementa 280 Ah datasheet.
+        # Calendar SoC weights fitted to the private high/low storage anchor
+        # ratio (~4.0), steeper than Naumann 2018 defaults (~2.67).
         k_cyc=4.8297e-5,
         k_cal=0.0318,
         test_anchor=TestAnchor(
             cycles=10000, dod=1.00, c_rate=0.5, temp_C=25.0, retention=0.70,
-            source="Trina Elementa 280Ah cell spec (internal AES Technology Research Institute report, 2025.04)",
+            source="Trina Elementa 280Ah cell datasheet (public)",
         ),
         warranty_anchor=WarrantyAnchor(
             cycles=7300, dod=0.90, retention=0.70,
@@ -294,14 +315,15 @@ PRESETS: Dict[str, CellPreset] = {
         cycle_budget=0.2415,
         ref_fec=10000.0,
         cal_life_years=20.0,
-        calibration_status="multi_anchor",
+        calibration_status="multi_anchor_partial_private",
         calendar_soc_weights={"low": 0.45, "mid": 1.00, "high": 1.80},
         notes=(
-            "Best-calibrated preset: cycle + two calendar (40% and 100% SoC) anchors all "
-            "reproduce to ±0.5pp. Strübbel LTSA project uses Trina cells — this preset is "
-            "the basis for that retrofit. Public source URL points to Trina marketing; "
-            "the multi-point anchor set comes from an internal AES reference shared with "
-            "BayWa r.e., not publicly quoted."
+            "Multi-anchor calibration with MIXED PROVENANCE. Cycle anchor is "
+            "from the public Trina Elementa 280 Ah datasheet. The two calendar "
+            "anchors (40 % SoC / 2 yr ≥ 98 % retention, 100 % SoC / 10000 days "
+            "→ 70 % retention) come from a non-public source and are NOT "
+            "reproducible from `source_url` alone. Cycle + two calendar "
+            "anchors reproduce to ±0.5 pp in the kernel's back-test."
         ),
         **_LFP_DEFAULTS,
     ),
@@ -334,7 +356,7 @@ PRESETS: Dict[str, CellPreset] = {
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# Legacy API (kept verbatim for Notes 1 / 2 / Best-Days / Strübbel)
+# Legacy API (kept verbatim for Notes 1 / 2 / Best-Days)
 # ────────────────────────────────────────────────────────────────────────────
 
 

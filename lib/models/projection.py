@@ -11,9 +11,9 @@ from lib.config import (
     TTF_2026, TTF_2040,
     PV_GW_2026, PV_GW_2040, PV_SPREAD_SENSITIVITY,
     GAS_SPREAD_ELASTICITY,
-    fleet_degradation_factor,
 )
 from lib.models.ancillary import ancillary_revenue
+from lib.models.degradation import PRESETS, fleet_average_capacity
 
 
 def id_da_ratio(year: int) -> float:
@@ -153,7 +153,11 @@ def project_full_stack(
         # Degradation: fleet-average across projection-era cohorts only
         # (pre-2026 fleet is already captured in the historical baseline)
         proj_buildout = {y: v for y, v in bess_buildout.items() if y >= min(years)}
-        deg = fleet_degradation_factor(year, proj_buildout)
+        deg = fleet_average_capacity(
+            year=year,
+            buildout=proj_buildout,
+            preset=PRESETS["baseline_fleet"],
+        )
 
         results.append({
             "year": year,

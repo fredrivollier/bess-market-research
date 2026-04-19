@@ -74,6 +74,26 @@ def ancillary_revenue(
     }
 
 
+def afrr_prequal_fraction(
+    max_ramp_pct_per_min: float | None,
+    full_activation_seconds: float = 300.0,
+) -> float:
+    """
+    Fraction of rated power that meets the aFRR full-activation SLA under a
+    Leistungsgradient limit. German aFRR requires reaching 100 % of reserved
+    capacity within the full-activation time (default 5 min). With a ramp
+    limit of r %/min, the battery reaches r × (full_activation_seconds / 60) %
+    of P in that window; that caps prequalified MW as a fraction of rated.
+
+    BDEW TAB-MS v1 band: default 22 %/min → 1.0 (no binding), floor 6 %/min
+    → 0.30 (only 30 % of P can prequalify). ``None`` = unconstrained → 1.0.
+    """
+    if max_ramp_pct_per_min is None:
+        return 1.0
+    reachable_pct = max_ramp_pct_per_min * (full_activation_seconds / 60.0)
+    return float(min(1.0, max(0.0, reachable_pct / 100.0)))
+
+
 def _component_saturate(
     bess_gw: float, val_at_5gw: float, val_at_17gw: float, floor: float,
 ) -> float:

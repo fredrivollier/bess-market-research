@@ -19,6 +19,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from plotly.subplots import make_subplots
+
 from lib.models.degradation import PRESETS
 from lib.models.degradation_detailed import DutyCycle, project_capacity_detailed
 from lib.ui.theme import (
@@ -47,465 +49,449 @@ apply_theme(show_sidebar=False)
 render_header(
     title="What actually drives degradation",
     kicker="GERMAN BESS | DEGRADATION",
-    subtitle="Cycle count is a bad proxy for cell health. Here is what moves the needle.",
+    subtitle="Battery health depends on more than cycle count. Here's the rest of the picture.",
 )
 
 # ── Intro ────────────────────────────────────────────────────
 st.markdown(
     """
-Notes 1 and 2 used a single number for degradation — 1.8%/year, flat. It is
-enough for headline fleet revenue, and nothing more. The moment you ask a
-real design question — should I size 4 hours or 2, should I sit at 50% SoC
-or swing to 80%, does hotter climate kill the asset — that single number
-goes silent.
+Most investor-side BESS models start from the same shortcut: pick a number of cycles per year, multiply by a fade rate, call it degradation. A surprising number don't even bother with the cycles — they just apply a flat annual % fade and move on. Either way, that is how lifetime revenue gets projected, how warranty calls get argued, how augmentation gets sized. The number of cycles — when it appears at all — is *the* input.
 
-The industry still reports cell health in cycles. Cycle count is a
-thermometer left in the freezer: it registers something, but it misses
-most of what is happening. Two identical packs can finish the same year at
-730 equivalent full cycles and have SoH 12 percentage points apart,
-because one spent its evenings parked at 90% SoC and the other drifted at
-55%. Calendar aging ran differently. Neither pack's cycle counter noticed.
+It is the wrong one to anchor on. Two battery packs that log an identical 730 cycles in a year can land years apart at end of life — one crosses the 70% SoH floor at year 10, the other at year 14 — purely because of what the pack did *between* those cycles. Where it rested. How warm the room was. How deep each cycle went. Cycle count catches none of it.
 
-This note takes the fleet-average fade apart. I rebuilt the degradation
-model on two calibrated physics channels — Wang 2011 for cycle, Naumann
-2018 for calendar with explicit SoC dependence — cross-checked against
-SimSES (TU Munich's open-source reference). Then I swept the levers an
-owner actually controls and converted each one into lifetime NPV. The
-ranking that falls out is the subject of the first chart.
+So I rebuilt the model to price them explicitly. This note moves each driver — depth of discharge, rest state, how fast it cycles, how many cycles it runs, and how warm it sits — across its full operating range and ranks them by how many years of life each one buys or burns.
 
-The short version: **DoD, rest SoC, and C-rate each move lifetime NPV
-by tens of percent — more than any credible cross-cell envelope.** Cell
-brand mostly sets the ceiling. How you dispatch decides where you land
-under it.
+The ranking is on a **€/MWh-throughput** basis — the per-MWh "wear bill" a pack runs up over its lifetime, i.e. replacement-pack CAPEX amortised over the total MWh the pack discharges before it dies.
+
+**The short version: temperature and C-rate dominate everything else.** Rest SoC and cycles per day each move the bill by half as much. Depth of discharge barely moves it at all, because the years of life it burns are cancelled almost exactly by the extra MWh per cycle it delivers. Which cell you buy sets the ceiling; how the pack is run decides where inside that ceiling you end up.
 """
 )
 
 data = load_precomputed()
 
-# ── The levers an owner actually controls ──────────────────
+# ── The levers ──────────────────────────────────────────────
 st.markdown("---")
 st.markdown(
     """
-### The levers an owner actually controls
+### The five levers
 
-Before the chart, a frame. The parameters that move lifetime NPV
-through degradation fall into three buckets, and the distinction
-matters because it tells you who owns the decision.
+Five parameters set the fade rate of a stationary LFP pack. The trader moves four of them every day; the site fixes the fifth.
 
-**Dispatch** — DoD, rest SoC, C-rate, cycles/day. Re-tunable every
-trading day. The operator owns these end-to-end, even under a
-fixed LTSA. This is where most of the chart lives.
+- **Depth of discharge (DoD)** — how far each cycle swings.
+- **Rest SoC** — the state of charge the pack sits at during the ~20 hours a day it isn't actively moving energy.
+- **C-rate** — how fast power moves in and out of the battery.
+- **Cycling rate** — full-equivalent cycles per day.
+- **Temperature** — cell-internal average over the year.
 
-**Design** — duration (hours of storage), chemistry, HVAC
-specification. Locked at COD; the owner chooses once and lives
-with it. Design levers do not appear as bars below for three
-reasons: duration materialises through C-rate (already on the
-chart), chemistry gets a separate treatment further down (public
-datasheets do not support a head-to-head ranking), and HVAC is
-manufacturer-set and runs to its own control loop — not an
-operator decision after delivery.
-
-**Given** — climate temperature, calendar age, cell-to-cell
-variation. Not chosen at all, at least not on the time horizon of
-a running asset. They still move NPV and still deserve a line
-item: the question is whether they move it by more or less than
-the dispatch choices the operator makes daily.
-
-The chart ranks what we can swing. Two colours: **dispatch** in
-blue (operator-owned), **given** in grey (the floor the physics
-hands you).
+Below, each lever is swept end-to-end with the other four held at a typical operator point (2 c/d, 80 % DoD, 55 % rest SoC, 0.5C, 25 °C). Toggle the y-axis between **€/MWh throughput** (pack CAPEX at 180 €/kWh amortised over lifetime MWh) and **years until 70 % SoH** — the ranking shifts depending on which you ask. The dashed horizontal line in each panel marks the baseline value.
 """
 )
 
-# ── Chart 1 — lever ranking ─────────────────────────────────
+# ── Chart 1 — driver response curves (years-to-EOL) ─────────
 st.markdown("---")
-render_chart_title("Each lever priced against baseline")
+render_chart_title("How each driver moves the number")
 st.markdown(
-    "<div style='color:#6b6b6b;font-size:0.9em;margin-bottom:0.5em'>"
-    "Each parameter is a <b>20-year average</b>, held constant across asset life. "
-    "Y-axis shows baseline value; bars show where NPV lands if that one parameter "
-    "shifts. Colour of the row label marks the bucket: "
-    "<span style='color:#0b5fff'><b>dispatch</b></span> (operator-owned) vs "
-    "<span style='color:#6b6b6b'><b>given</b></span> (physics / climate)."
+    "<div style='color:#6b6b6b;font-size:0.95em;margin-bottom:0.5em'>"
+    "Each panel moves one driver across its full operating range, with the other four held at the baseline point (dashed line). "
+    "Toggle the axis between <b>€/MWh throughput</b> and <b>years until 70 % SoH</b>. "
+    "Read it as: <i>\"if average cycles per day drop from 2 to 1, the €/MWh bill falls — and life grows by ~5 years with it.\"</i>"
     "</div>",
     unsafe_allow_html=True,
 )
-lever = data["lever_sweep"].copy().sort_values("span").reset_index(drop=True)
-BASELINE_VALUES = {
-    "Temperature":  "25 °C",
-    "C-rate":       "0.5C",
-    "Rest SoC":     "55%",
-    "Cycles / day": "2 c/d",
-    "DoD":          "80%",
-    "Imbalance":    "5 pp spread",
+
+_curves = data["response_curves"]
+_drivers_by_key = {d["key"]: d for d in _curves["drivers"]}
+
+
+# x-raw, y=years. `x_transform` converts raw → display units.
+_curve_points = {
+    k: [{"x": p["x"], "y": p["years"]} for p in d["years_to_70_mid"]]
+    for k, d in _drivers_by_key.items()
 }
-GROUP_COLORS = {"dispatch": "#0b5fff", "given": "#6b6b6b"}
-lever["y_label"] = lever.apply(
-    lambda r: f"<b style='color:{GROUP_COLORS.get(r['group'], '#111')}'>{r['lever']}</b>",
-    axis=1,
-)
-_npv_base = float(data["baseline_npv_keur"])
-lever["low_pct"] = lever["low_delta"] / _npv_base * 100.0
-lever["high_pct"] = lever["high_delta"] / _npv_base * 100.0
 
-GREEN = "#2ca02c"
-RED = "#c15a5a"
-
-
-def _fmt_end(value, pct):
-    sign = "+" if pct >= 0 else "−"
-    return f"  {value} · {sign}{abs(pct):.0f}%  "
-
-
-# Convention: GAIN (green) always on the LEFT (negative x), LOSS (red) always on the RIGHT
-# (positive x), regardless of whether improvement comes from lowering or raising the parameter.
-# One-sided levers (e.g. Imbalance: baseline is best case, both perturbations hurt) show only
-# the loss bar.
-gain_x, gain_text, loss_x, loss_text = [], [], [], []
-for _, r in lever.iterrows():
-    low_pct, low_lbl = r["low_pct"], r["low_label"].split("(")[-1].rstrip(")")
-    high_pct, high_lbl = r["high_pct"], r["high_label"].split("(")[-1].rstrip(")")
-    if low_pct >= 0 and high_pct >= 0:
-        gain_pct, gain_lbl = (low_pct, low_lbl) if low_pct > high_pct else (high_pct, high_lbl)
-        loss_pct, loss_lbl = 0.0, ""
-    elif low_pct < 0 and high_pct < 0:
-        gain_pct, gain_lbl = 0.0, ""
-        loss_pct, loss_lbl = (low_pct, low_lbl) if low_pct < high_pct else (high_pct, high_lbl)
-    elif low_pct >= 0:
-        gain_pct, gain_lbl = low_pct, low_lbl
-        loss_pct, loss_lbl = high_pct, high_lbl
-    else:
-        gain_pct, gain_lbl = high_pct, high_lbl
-        loss_pct, loss_lbl = low_pct, low_lbl
-    gain_x.append(-abs(gain_pct))
-    loss_x.append(abs(loss_pct))
-    gain_text.append(_fmt_end(gain_lbl, gain_pct) if gain_lbl else "")
-    loss_text.append(_fmt_end(loss_lbl, loss_pct) if loss_lbl else "")
-
-fig_a = go.Figure()
-fig_a.add_trace(
-    go.Bar(
-        x=gain_x,
-        y=lever["y_label"],
-        orientation="h",
-        marker_color=GREEN,
-        text=gain_text,
-        textposition="outside",
-        textfont=dict(size=13, color="#1a5a1a"),
-        cliponaxis=False,
-        hoverinfo="skip",
-    )
-)
-fig_a.add_trace(
-    go.Bar(
-        x=loss_x,
-        y=lever["y_label"],
-        orientation="h",
-        marker_color=RED,
-        text=loss_text,
-        textposition="outside",
-        textfont=dict(size=13, color="#7a2828"),
-        cliponaxis=False,
-        hoverinfo="skip",
-    )
-)
-fig_a.add_vline(x=0, line_color="#111", line_width=2)
-fig_a.add_annotation(
-    x=0, y=1.06, xref="x", yref="paper",
-    text="<b>baseline</b>",
-    showarrow=False, font=dict(size=12, color="#111"),
-    yanchor="bottom",
-)
-for _, r in lever.iterrows():
-    fig_a.add_annotation(
-        x=0, y=r["y_label"],
-        text=f"<b>{BASELINE_VALUES[r['lever']]}</b>",
-        showarrow=False,
-        font=dict(size=12, color="#111"),
-        bgcolor="#fbf7ef",
-        bordercolor="#111",
-        borderwidth=1,
-        borderpad=4,
-        xanchor="center", yanchor="middle",
-    )
-fig_a.add_annotation(
-    x=-1, y=1.06, xref="paper", yref="paper",
-    text="<b>← better NPV</b>",
-    showarrow=False, font=dict(size=12, color=GREEN),
-    xanchor="left", yanchor="bottom",
-)
-fig_a.add_annotation(
-    x=1, y=1.06, xref="paper", yref="paper",
-    text="<b>worse NPV →</b>",
-    showarrow=False, font=dict(size=12, color=RED),
-    xanchor="right", yanchor="bottom",
-)
-_lim = max(max(abs(v) for v in gain_x), max(abs(v) for v in loss_x)) * 1.35
-fig_a.update_layout(
-    barmode="overlay",
-    xaxis_title="",
-    yaxis_title="",
-    yaxis=dict(tickfont=dict(size=15)),
-    xaxis=dict(range=[-_lim, _lim], zeroline=False, showticklabels=False),
-    height=480,
-    margin=dict(l=10, r=10, t=70, b=10),
-    showlegend=False,
-    plot_bgcolor="rgba(0,0,0,0)",
-    bargap=0.45,
-)
-st.plotly_chart(fig_a, use_container_width=True, config={"displayModeBar": False})
-render_chart_caption(
-    f"NPV in % of baseline lifetime NPV (≈{_npv_base:.0f} kEUR/MW, year-1 revenue "
-    f"120 kEUR/MW from Note 2, 20 yr, 8% discount). Kernel uses averaged inputs; "
-    f"real sites with wide thermal or DoD swings fade worse than shown. "
-    f"**Imbalance** is a weakest-cell proxy: string-level SoC spread shifts the "
-    f"worst cell to deeper effective DoD and higher dwell than the string mean. "
-    f"Span anchored to field pack-vs-cell gap (10–20%, Schimpe 2018 / Reniers 2019). "
-    f"LTSA fixes the BMS; operator owns monitoring discipline and intervention cadence."
-)
-render_takeaway(
-    "Dispatch levers (DoD, Rest SoC, C-rate, cycles/day) individually swing lifetime NPV by more than the given-side floor of climate temperature and cell imbalance combined. The levers the operator re-tunes every day dominate the ones physics hands them."
-)
-
-st.markdown(
-    """
-Two things in that chart are worth sitting with.
-
-**DoD is not symmetric.** Going from 80% to 95% DoD costs more than going
-from 80% to 60% saves. Cycle stress scales super-linearly with depth
-(Xu 2018, α≈1.5 in our kernel), so the top 15% of depth hurts out of
-proportion to the extra throughput it buys. Dispatch optimisers that
-chase every EUR inside the 80–100% range are spending warranty headroom
-they will not get back.
-
-**Cycle count and DoD point opposite ways.** Cutting throughput is easy
-wins — dropping from 2 c/d to 1 c/d (FCR-style) buys more NPV than
-pushing DoD from 80% down to 60% does. Adding cycles hurts less than
-adding depth: going from 2 to 2.5 c/d costs half of what going from 80%
-to 95% DoD does. The old instinct "more cycles = more wear" is half
-right and half misleading — depth beats count, every time.
-
-**Rest SoC matters even without cycling.** *Rest SoC* is the average
-state of charge the battery sits at between trades — where the pack
-"lives" when it is not actively cycling. A pack that finishes each
-afternoon topped up at 85% waiting for the morning peak has a high
-rest SoC; one that idles near 50% (FCR-style) has a low one.
-
-Raising rest SoC from 55% to 75% costs meaningful NPV with *zero*
-extra cycles — that is pure calendar aging, the Naumann SoC-cubic term
-doing its work (plating stress rises with a linear + cubic combination
-of how far the cell sits above the 50% thermodynamic midpoint). FCR-heavy
-operators who sit near 50% by protocol get this for free. Arbitrage
-operators who end the day at 85% are paying for it, and no cycle counter
-will flag it.
-
-**Chemistry is a ceiling, not a strategy.** The cell datasheet sets the
-physics headroom; the schedule decides how much of it survives to year
-20. I am deliberately not ranking EVE / CATL / BYD / Trina head-to-head
-here — see the note on cross-chemistry comparison below for why public
-datasheets do not support that ranking. The claim this chart supports is
-the narrower one: every operator lever above moves more NPV than a
-credible cross-cell envelope would.
-"""
-)
-
-# ── SoH panels (four scenarios) ────────────────────────────
-st.markdown("---")
-render_chart_title("Same cell, four duty cycles — trajectories diverge by year 5")
-cols = st.columns(2)
-scenario_labels = {
-    "baseline": "Baseline (2 c/d, 80% DoD, 55% SoC)",
-    "deep_dod": "Deep DoD (95%)",
-    "high_soc": "High rest SoC (85% mean)",
-    "c_rate_discipline": "C-rate discipline (0.25C)",
+_baseline_x = {
+    "temp": 25.0, "crate": 0.50, "dod": 0.80, "soc": 0.55, "fec": 730.0,
 }
-for i, (key, df) in enumerate(data["soh_panels"].items()):
-    f = go.Figure()
-    f.add_trace(go.Scatter(x=df["year"], y=df["p50"], name="median cell", line=dict(color="#0b5fff")))
-    f.add_trace(
+_driver_meta = {
+    "temp":  {"label": "Average cell temperature", "color": "#d35f5f",
+              "x_transform": lambda x: x,         "x_unit": "°C",
+              "x_fmt": lambda v: f"{v:.0f} °C"},
+    "dod":   {"label": "Average DoD",              "color": "#7a5cff",
+              "x_transform": lambda x: x * 100.0, "x_unit": "%",
+              "x_fmt": lambda v: f"{v:.0f}%"},
+    "crate": {"label": "Average C-rate",           "color": "#3b7dd8",
+              "x_transform": lambda x: x,         "x_unit": "C",
+              "x_fmt": lambda v: f"{v:.2f} C"},
+    "soc":   {"label": "Average rest SoC",         "color": "#1aa179",
+              "x_transform": lambda x: x * 100.0, "x_unit": "%",
+              "x_fmt": lambda v: f"{v:.0f}%"},
+    "fec":   {"label": "Cycles per day",           "color": "#e0a83b",
+              "x_transform": lambda x: x / 365.0, "x_unit": " c/d",
+              "x_fmt": lambda v: f"{v:.1f} c/d"},
+}
+
+# ── Inline chart: years OR €/MWh small multiples, 1×5 (absolute, switchable) ─────
+_order = ["temp", "dod", "crate", "soc", "fec"]
+_GAIN, _LOSS = "#1a7a3e", "#b42020"
+_AXIS_GREY = "#555"
+
+_CAPEX_EUR_PER_KWH = 180.0
+
+
+def _cost_eur_per_mwh(driver_key: str, x_raw: float, years: float) -> float:
+    if years <= 0:
+        return float("inf")
+    fec = x_raw if driver_key == "fec" else 730.0
+    dod = x_raw if driver_key == "dod" else 0.80
+    return _CAPEX_EUR_PER_KWH * 1000.0 / (years * fec * dod)
+
+
+_series = {}
+_all_years: list[float] = []
+_all_costs: list[float] = []
+# Each sweep is an independent MC estimate of the same baseline point;
+# average them so every panel displays one canonical baseline, not per-sweep noise.
+_baseline_y_per_driver: list[float] = []
+for k in _order:
+    pts = [p for p in _curve_points[k] if p["y"] is not None]
+    xs_raw = [p["x"] for p in pts]
+    ys_abs = [p["y"] for p in pts]
+    b_raw = _baseline_x[k]
+    _baseline_y_per_driver.append(float(np.interp(b_raw, xs_raw, ys_abs)))
+_canonical_b_y = float(np.mean(_baseline_y_per_driver))
+
+for k in _order:
+    pts = [p for p in _curve_points[k] if p["y"] is not None]
+    xs_raw = [p["x"] for p in pts]
+    ys_abs = [p["y"] for p in pts]
+    b_raw = _baseline_x[k]
+    b_y = _canonical_b_y
+    costs = [_cost_eur_per_mwh(k, x, y) for x, y in zip(xs_raw, ys_abs)]
+    b_cost = _cost_eur_per_mwh(k, b_raw, b_y)
+    _all_years.extend(ys_abs)
+    _all_costs.extend(costs)
+    _series[k] = {
+        "xs_disp": [_driver_meta[k]["x_transform"](x) for x in xs_raw],
+        "years": ys_abs,
+        "costs": costs,
+        "b_disp": _driver_meta[k]["x_transform"](b_raw),
+        "b_y": b_y,
+        "b_cost": b_cost,
+    }
+
+
+def _pad_range(vals: list[float], pad: float = 0.10) -> list[float]:
+    lo, hi = min(vals), max(vals)
+    span = hi - lo
+    return [max(0, lo - pad * span), hi + pad * span]
+
+
+_view_labels = {
+    "€/MWh throughput": {
+        "series_key": "costs",
+        "baseline_key": "b_cost",
+        "y_label": "€ per MWh throughput",
+        "y_range": _pad_range(_all_costs),
+        "fmt": lambda v: f"€{v:.0f}",
+        "higher_is_better": False,
+        "hover_unit": " €/MWh",
+    },
+    "Years to end of life": {
+        "series_key": "years",
+        "baseline_key": "b_y",
+        "y_label": "Years until 70 % SoH",
+        "y_range": _pad_range(_all_years),
+        "fmt": lambda v: f"{v:.1f}",
+        "higher_is_better": True,
+        "hover_unit": " yr",
+    },
+}
+
+_view_choice = st.radio(
+    "Y axis",
+    list(_view_labels.keys()),
+    horizontal=True,
+    label_visibility="collapsed",
+    key="lever_chart_view",
+)
+_view = _view_labels[_view_choice]
+
+fig1 = make_subplots(rows=1, cols=5, horizontal_spacing=0.045)
+
+for i, k in enumerate(_order):
+    meta = _driver_meta[k]
+    s = _series[k]
+    row, col = 1, i + 1
+    color = meta["color"]
+    xs_disp = s["xs_disp"]
+    b_disp = s["b_disp"]
+    ys = s[_view["series_key"]]
+    b_val = s[_view["baseline_key"]]
+    axis_suffix = "" if i == 0 else str(i + 1)
+
+    # Horizontal baseline-value reference line
+    fig1.add_shape(
+        type="line",
+        xref=f"x{axis_suffix} domain", yref=f"y{axis_suffix}",
+        x0=0, x1=1, y0=b_val, y1=b_val,
+        line=dict(color="#888", width=1.1, dash="dash"),
+    )
+    # Main curve
+    fig1.add_trace(
         go.Scatter(
-            x=np.concatenate([df["year"], df["year"][::-1]]),
-            y=np.concatenate([df["p90"], df["p10"][::-1]]),
-            fill="toself",
-            fillcolor="rgba(11,95,255,0.15)",
-            line=dict(color="rgba(0,0,0,0)"),
-            name="p10–p90 (cell variation)",
+            x=xs_disp, y=ys, mode="lines",
+            line=dict(color=color, width=2.8, shape="spline"),
+            hovertemplate=f"%{{x:.2f}}{meta['x_unit']}<br>%{{y:.1f}}{_view['hover_unit']}<extra></extra>",
+            showlegend=False,
+        ),
+        row=row, col=col,
+    )
+    # Endpoint markers
+    lo_y, hi_y = ys[0], ys[-1]
+    fig1.add_trace(
+        go.Scatter(
+            x=[xs_disp[0], xs_disp[-1]], y=[lo_y, hi_y],
+            mode="markers", marker=dict(size=9, color=color),
+            hoverinfo="skip", showlegend=False, cliponaxis=False,
+        ),
+        row=row, col=col,
+    )
+    # Endpoint labels — absolute values, coloured vs baseline
+    for xd, yv, side in [(xs_disp[0], lo_y, "right"), (xs_disp[-1], hi_y, "left")]:
+        is_gain = (yv >= b_val) if _view["higher_is_better"] else (yv <= b_val)
+        fig1.add_annotation(
+            x=xd, y=yv, text=f"<b>{_view['fmt'](yv)}</b>", showarrow=False,
+            xshift=8 if side == "right" else -8,
+            yshift=12 if yv >= b_val else -12,
+            xanchor="left" if side == "right" else "right",
+            font=dict(size=12, color=_GAIN if is_gain else _LOSS),
+            row=row, col=col,
         )
+    # Vertical baseline guide
+    fig1.add_shape(
+        type="line",
+        xref=f"x{axis_suffix}", yref=f"y{axis_suffix} domain",
+        x0=b_disp, x1=b_disp, y0=0, y1=1,
+        line=dict(color="#888", width=1.1, dash="dash"),
     )
-    f.add_hline(y=0.70, line_dash="dot", line_color="#888", annotation_text="EOL 70%")
-    f.update_layout(
-        title=scenario_labels.get(key, key.replace("_", " ").title()),
-        xaxis_title="years",
-        yaxis_title="SoH (fraction)",
-        yaxis=dict(range=[0.6, 1.0]),
-        height=280,
-        margin=dict(l=10, r=10, t=40, b=10),
-        showlegend=(i == 0),
+    # Baseline value label at the baseline point
+    fig1.add_annotation(
+        x=b_disp, y=b_val, text=_view["fmt"](b_val),
+        showarrow=False, yshift=-14,
+        font=dict(size=11, color="#555"),
+        bgcolor="rgba(246,243,236,0.85)",
+        borderpad=2,
+        row=row, col=col,
     )
-    cols[i % 2].plotly_chart(f, use_container_width=True, config={"displayModeBar": False})
+    # Per-panel coloured driver title
+    fig1.add_annotation(
+        xref=f"x{axis_suffix} domain", yref=f"y{axis_suffix} domain",
+        x=0.5, y=1.22, text=f"<b>{meta['label']}</b>",
+        showarrow=False, xanchor="center",
+        font=dict(size=14, color=color),
+    )
+    # X-axis: ticks on TOP — min, baseline (coloured), max
+    tick_vals = [xs_disp[0], b_disp, xs_disp[-1]]
+    tick_texts = [
+        meta["x_fmt"](xs_disp[0]),
+        f"<span style='color:{color}'><b>{meta['x_fmt'](b_disp)}</b></span>",
+        meta["x_fmt"](xs_disp[-1]),
+    ]
+    fig1.update_xaxes(
+        row=row, col=col,
+        side="top",
+        tickvals=tick_vals,
+        ticktext=tick_texts,
+        showline=True, linecolor=_AXIS_GREY, linewidth=1,
+        ticks="outside", ticklen=5, tickcolor=_AXIS_GREY,
+        tickfont=dict(size=12, color="#222"),
+        showgrid=False, zeroline=False,
+        range=[xs_disp[0], xs_disp[-1]],
+    )
+    # Y-axis: only leftmost column
+    if col == 1:
+        fig1.update_yaxes(
+            row=row, col=col, range=_view["y_range"],
+            showline=True, linecolor=_AXIS_GREY, linewidth=1,
+            ticks="outside", ticklen=5, tickcolor=_AXIS_GREY,
+            tickfont=dict(size=11, color="#222"),
+            showgrid=False, zeroline=False,
+            title_text=_view["y_label"],
+            title_font=dict(size=11, color=_AXIS_GREY),
+        )
+    else:
+        fig1.update_yaxes(
+            row=row, col=col, range=_view["y_range"],
+            showline=False, showticklabels=False,
+            showgrid=False, zeroline=False, ticks="",
+        )
 
+fig1.update_layout(
+    height=340, margin=dict(l=60, r=15, t=75, b=20),
+    plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+    showlegend=False,
+)
+st.markdown(
+    """
+    <style>
+    .driver-wide-marker { display: none; }
+    .stElementContainer:has(.driver-wide-marker) + .stElementContainer {
+        width: min(1400px, 100vw - 40px) !important;
+        max-width: min(1400px, 100vw - 40px) !important;
+        margin-left: calc((100% - min(1400px, 100vw - 40px)) / 2) !important;
+    }
+    .stElementContainer:has(.driver-wide-marker) + .stElementContainer [data-testid="stPlotlyChart"] {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+    </style>
+    <div class="driver-wide-marker"></div>
+    """,
+    unsafe_allow_html=True,
+)
+st.plotly_chart(fig1, use_container_width=True, config={"displayModeBar": False})
 render_chart_caption(
-    "Same `baseline_fleet` preset, 500 Monte Carlo cells per scenario. "
-    "Bands are cell-to-cell spread (CoV 8%, Severson 2019)."
-)
-
-st.markdown(
-    """
-Four trajectories, one cell. The baseline owner and the deep-DoD owner
-diverge by year 5 and keep diverging — the deep-DoD asset hits EOL 70%
-around year 14 where the baseline sits at 75% and still has runway.
-High rest SoC does the same thing more quietly: no extra FEC, just
-calendar curvature. C-rate discipline at 0.25C buys a year or two on
-its own; stacked with DoD moderation it stretches further.
-"""
-)
-
-# ── Chemistry — why no head-to-head chart ───────────────────
-st.markdown("---")
-st.markdown(
-    """
-### A note on cross-chemistry comparison
-
-The natural next question is *which cell ages best under identical
-duty*. I am not answering it here. The public anchors for EVE, CATL,
-BYD, and Trina come from different documents, at different retention
-targets (CATL quotes FEC-to-70%, the others to 80%), from different
-labs under different implicit margins — spec sheets for some,
-marketing pages for others. Lining up four trajectories on the same
-axes would be a chart of how each vendor writes numbers, not a chart
-of how the cells age.
-
-A credible cross-chemistry ranking needs a head-to-head bench on
-matched protocol. That exists in principle (third-party labs like DNV
-and UL run them) but not in the open. Until one surfaces, the
-lever-ranking chart above stands on its own message: **cell selection
-sits inside a narrower envelope than any single dispatch choice**.
-That holds whether BYD's 12 000-FEC marketing claim or EVE's 6 000-FEC
-spec point is closer to pack reality — both envelopes are smaller than
-the spread from DoD 60% to 95%.
-"""
-)
-
-# ── EUR/FEC ruler ───────────────────────────────────────────
-st.markdown("---")
-render_chart_title("The EUR/FEC ruler — what one more cycle costs you")
-st.markdown(
-    """
-Cost-of-cycle is the number every dispatch optimiser needs and almost
-nobody computes right. The naive version (EoL replacement cost / total
-lifetime FEC) hands you a flat €/MWh figure around 10–15 for LFP — the
-Schimpe 2018 reference for ~12.8 €/MWh lives in this range. That flat
-number is what a *throughput* degradation model produces, and it is the
-first entry in the "models that flip profitability" row of the
-Humiston 2026 result.
-
-The degradation-aware version is state-dependent. The same cycle is
-cheap when the pack is fresh and sitting at 50% SoC at 20 °C; it is
-expensive when the pack is tired, dwelling at 85%, and trading into
-warm weather. Our kernel computes the marginal NPV cost of one extra
-cycle as a function of (current SoH, SoC, temperature) — that is the
-Holtorf & Shin 2026 opportunity-cost framing, and it is the subject of
-Note 3b. The point for this note: **flat €/MWh cost-of-cycle is wrong
-in the direction that matters.** It under-prices cycling in the back
-half of asset life, when every remaining cycle is expensive, and
-over-prices it early, when cycles are nearly free.
-"""
+    "DoD barely moves the €/MWh bill (~€31 either way) but pulls years-to-EOL "
+    "from 15 down to 8. Cycles per day behaves similarly. Rest SoC moves both. "
+    "Baseline ≈ €31 per MWh / 10 yr. Temperature here is <b>cell-internal</b>, "
+    "so the C-rate panel already includes self-heating; at fixed ambient the "
+    "two aren't fully independent."
 )
 render_takeaway(
-    "Flat €/MWh cost-of-cycle mis-prices degradation in both directions — under the early asset, "
-    "over the tired asset. Dispatch economics need state-dependent cost."
-)
-
-# ── Climate case ────────────────────────────────────────────
-st.markdown("---")
-render_chart_title("Climate case — how much does temperature move the asset?")
-preset = PRESETS["baseline_fleet"]
-climate_fig = go.Figure()
-climate_trajectories = {}
-for T, color in [(15, "#2ca02c"), (25, "#0b5fff"), (30, "#ff8c00"), (35, "#c15a5a")]:
-    duty = DutyCycle.from_mean(fec_per_year=730, mean_dod=0.80, mean_soc=0.55, mean_crate=0.5, mean_temp_C=float(T))
-    xs = np.arange(0.0, 20.01, 1.0)
-    rng = np.random.default_rng(2)
-    ys = []
-    for yr in xs:
-        if yr <= 0:
-            ys.append(1.0)
-            continue
-        _, p50, _ = project_capacity_detailed(
-            duty=duty, years=float(yr), preset=preset, n_mc=200, return_kind="distribution", rng=rng
-        )
-        ys.append(p50)
-    climate_trajectories[T] = (xs, ys)
-    climate_fig.add_trace(
-        go.Scatter(x=xs, y=ys, name=f"{T} °C mean", line=dict(color=color, width=2))
-    )
-climate_fig.add_hline(y=0.70, line_dash="dot", line_color="#888", annotation_text="EOL 70%")
-climate_fig.update_layout(
-    xaxis_title="years",
-    yaxis_title="SoH (median)",
-    yaxis=dict(range=[0.55, 1.0]),
-    height=380,
-    margin=dict(l=10, r=10, t=10, b=10),
-)
-st.plotly_chart(climate_fig, use_container_width=True, config={"displayModeBar": False})
-render_chart_caption(
-    "Baseline duty (2 c/d, 80% DoD, 55% SoC) at four ambient means. "
-    "Calendar channel uses Naumann-form Arrhenius Ea ≈ 0.55 eV (≈53 kJ/mol, "
-    "within Naumann 2018's reported 0.55–0.73 eV range across SoC); cycle channel "
-    "Ea ≈ 0.30 eV (≈29 kJ/mol). X-axis treats `mean_temp_C` as the cell-internal "
-    "temperature — there is no self-heating term in the kernel, so at high C-rate "
-    "ambient should be adjusted upward (≈5–10 °C for 2C prismatic LFP) before "
-    "being passed in."
+    "Temperature and C-rate dominate the €/MWh bill. DoD barely moves it at all."
 )
 
 st.markdown(
     """
-The Modo 2025 fleet-level finding — ERCOT losing ~7% per 365 cycles vs
-GB ~4% — shows up here. A well-conditioned German site at 25 °C mean
-and a hot-climate site at 35 °C mean are not operating the same asset.
-The gap compounds: the hot site reaches 70% SoH years earlier, and
-every year before that carries more capacity fade per cycle. Cooling
-design is an economic lever, not a hygiene item. Liquid cooling
-(PowerTitan-class systems) buys back a lot of the delta in hot
-climates; it is not free on colder sites.
+Three things jump out.
+
+**Rest SoC is the invisible lever.** The pack sits idle most of the day. Where it sits decides how fast it ages, with zero extra cycles on the counter and zero extra MWh moved — so every year of life rest SoC costs lands straight on the €/MWh bill. An arbitrage pack charged up to 85% waiting for the morning peak carries a markedly higher per-MWh cost than an FCR pack idling near 50%. No cycle counter shows it; the chart does.
+
+**Cycles per day — nearly flat on cost.** Running the pack twice as hard (1 → 2.5 c/d) cuts life roughly in half, but pushes ~2.5× more MWh per year, so the €/MWh number drifts only ~€12 across the full range. The industry's headline metric is an accounting artefact on the cost side.
+
+**Temperature and C-rate do the heavy lifting.** Both panels bend sharply: a 10 °C lift or a doubling of C-rate each move the bill by more than rest SoC and FEC combined. These are the two knobs that actually decide whether a pack makes its warranty or not.
+
+One thing the chart doesn't label directly: duration. 1h vs 2h vs 4h doesn't enter as an independent lever — it enters through C-rate. A 1h battery discharging a full cycle runs at 1C; a 4h battery at 0.25C. For the same daily dispatch, the short-duration pack sits higher on the C-rate axis, and the C-rate panel is where that shows up. A 2h pack run like a typical arbitrage schedule (0.5C average) is the baseline here; a 1h pack running the same revenue would roughly double C-rate and land on the steep part of the C-rate curve.
+
+And then there's DoD — which deserves its own section.
 """
 )
 
-# ── Interactive — "Build your duty cycle" ───────────────────
+# ── The DoD invariance ──────────────────────────────────────
 st.markdown("---")
-st.markdown("## Build your own duty cycle")
+st.markdown(
+    """
+### Depth of discharge is a zero-cost lever
+
+Deeper cycles age the pack faster — but each cycle also delivers more
+energy. The two effects cancel. The cell carries something like a fixed
+**lifetime-throughput budget** (~5.7 MWh per kWh rated, for this preset),
+and DoD only decides whether you spend it in many shallow cycles or few
+deep ones. The total work the cell delivers before it dies is the same
+either way.
+
+That's why the €/MWh curve above is nearly flat along DoD: the cost of
+moving one MWh through the pack is about the same whether you cycle it
+at 50 % or 95 %. Most dispatch optimisers don't price it this way — they
+treat DoD as **the** central cost-of-cycling parameter, deeper swings =
+faster fade = more expensive cycle. Within the LFP operating window,
+that framing is wrong.
+
+This is the well-known Ah-throughput picture of LFP, not a model quirk —
+the physics and citations are in the methodology section below. It is
+LFP-shaped: for NMC the answer looks different, and above ~95 % DoD even
+LFP starts to bend.
+
+**What this means practically.** Within the LFP operating window, DoD
+decides **how fast you spend the budget**, not **how much each MWh
+costs**. Choosing 95 % over 80 % doesn't make each MWh more expensive —
+it just compresses the same lifetime MWh into fewer calendar years,
+with more energy per cycle to trade with. Whether that compression is
+worth doing depends on **price spreads** — exactly the question
+[*Cycles & Marginal Value*](https://de-bess-cycles.streamlit.app) (the
+previous note) answers — not on cost-per-MWh.
+"""
+)
+
+# ── Interactive — "Build your own schedule" ─────────────────
+st.markdown("---")
+st.markdown("## Build your own schedule")
 st.caption(
-    "Single-cell math, real time. Results are illustrative — pack effects and "
-    "cell-to-cell variation shown as a p10–p90 band."
+    "Pick a preset to reproduce a finding from the note, then swing the sliders to stress-test it."
+)
+
+_INTERACTIVE_PRESETS = {
+    "Typical arbitrage": {
+        "vals": dict(dod=0.80, fec=730, mean_soc=0.55, c_rate=0.50, temp=25),
+        "desc": "Two cycles a day, moderate depth, pack parks near the middle. "
+                "Close to what a well-behaved German arbitrage operator looks like.",
+    },
+    "Aggressive arbitrage": {
+        "vals": dict(dod=0.95, fec=730, mean_soc=0.85, c_rate=0.50, temp=25),
+        "desc": "Day-ahead peak-to-peak: 95% swings, pack parked at 85% "
+                "waiting for the morning peak. The depth + rest-SoC combo "
+                "quietly burns years off life.",
+    },
+    "FCR-heavy": {
+        "vals": dict(dod=0.55, fec=1095, mean_soc=0.50, c_rate=0.25, temp=25),
+        "desc": "50% more cycles per year than arbitrage — but shallow, slow, and "
+                "resting at midpoint. Lots of cycles, little fade: the cycle "
+                "counter overstates the wear.",
+    },
+    "Texas summer": {
+        "vals": dict(dod=0.90, fec=730, mean_soc=0.65, c_rate=0.50, temp=30),
+        "desc": "ERCOT-style duty on an HVAC-cooled site: cell-internal 30 °C "
+                "(the extra 5 °C over a German pack costs years, not months). "
+                "This is the climate lever working on top of an aggressive schedule.",
+    },
+    "Gentle": {
+        "vals": dict(dod=0.60, fec=730, mean_soc=0.50, c_rate=0.30, temp=25),
+        "desc": "What a warranty-preserving trader looks like: shallow cycles, "
+                "mid-point rest SoC, slow C-rate, cool cell.",
+    },
+}
+_DEFAULT_PRESET = "Typical arbitrage"
+for _k, _v in _INTERACTIVE_PRESETS[_DEFAULT_PRESET]["vals"].items():
+    st.session_state.setdefault(f"ddr_{_k}", _v)
+st.session_state.setdefault("ddr_preset", _DEFAULT_PRESET)
+
+def _apply_preset(name: str) -> None:
+    for k, v in _INTERACTIVE_PRESETS[name]["vals"].items():
+        st.session_state[f"ddr_{k}"] = v
+    st.session_state["ddr_preset"] = name
+
+_active_preset = st.session_state.get("ddr_preset", _DEFAULT_PRESET)
+
+preset_cols = st.columns(len(_INTERACTIVE_PRESETS))
+for pc, name in zip(preset_cols, _INTERACTIVE_PRESETS.keys()):
+    pc.button(
+        name, on_click=_apply_preset, args=(name,),
+        use_container_width=True,
+        type="primary" if name == _active_preset else "secondary",
+    )
+st.markdown(
+    f"<div style='display:flex;gap:0.6em;align-items:baseline;"
+    f"margin:0.7em 0.2em 2.2em 0.2em;max-width:900px'>"
+    f"<div style='color:#1aa179;font-weight:700;font-size:0.95em;"
+    f"line-height:1.5;flex-shrink:0'>{_active_preset} →</div>"
+    f"<div style='color:#444;font-size:0.95em;line-height:1.5'>"
+    f"{_INTERACTIVE_PRESETS[_active_preset]['desc']}</div>"
+    f"</div>",
+    unsafe_allow_html=True,
 )
 
 col1, col2, col3 = st.columns(3)
 with col1:
-    dod = st.slider("DoD per cycle", 0.50, 1.00, 0.80, 0.05)
-    fec = st.slider("FEC / year", 300, 900, 730, 10)
+    dod = st.slider("Average DoD per cycle",   0.50, 1.00, step=0.05, key="ddr_dod")
+    fec = st.slider("Cycles / year (FEC)",     300, 1500, step=10,   key="ddr_fec")
+    st.caption(f"≈ {fec/365:.2f} cycles/day")
 with col2:
-    soc_preset = st.selectbox(
-        "Rest SoC preset",
-        ["balanced (rest 55%)", "high rest SoC / arbitrage (85%)", "low rest SoC / FCR (35%)", "custom"],
-        help="Rest SoC is where the pack sits between trades — the average "
-             "state of charge outside active cycling. High rest SoC accelerates "
-             "calendar aging even without extra cycles.",
-    )
-    if soc_preset.startswith("custom"):
-        mean_soc = st.slider("rest SoC", 0.20, 0.90, 0.55, 0.05)
-    elif soc_preset.startswith("balanced"):
-        mean_soc = 0.55
-    elif soc_preset.startswith("high"):
-        mean_soc = 0.85
-    else:
-        mean_soc = 0.35
-    c_rate = st.slider("C-rate", 0.1, 1.0, 0.5, 0.05)
+    mean_soc = st.slider("Average rest SoC",    0.20, 0.90, step=0.05, key="ddr_mean_soc",
+                         help="Average state of charge between trades — where the "
+                              "pack sits when not actively cycling.")
+    c_rate   = st.slider("Average C-rate",      0.10, 1.00, step=0.05, key="ddr_c_rate")
 with col3:
-    temp = st.slider("Mean temperature (°C)", 10, 40, 25, 1)
-    st.caption(
-        "Cell: `baseline_fleet` synthetic LFP — see cross-chemistry note above "
-        "for why vendor-specific presets are not exposed here."
-    )
+    temp     = st.slider("Average cell-internal temperature (°C)", 10, 40, step=1, key="ddr_temp")
 
 duty = DutyCycle.from_mean(
     fec_per_year=float(fec),
@@ -530,8 +516,20 @@ for yr in years:
 soh_df = pd.DataFrame(rows, columns=["year", "p10", "p50", "p90"])
 
 eol = preset.eol_capacity_fraction
-below = soh_df[soh_df["p10"] <= eol]
+# Median (p50) to match the driver response curves above. The pack p10
+# convention used in revenue models runs ~10 % shorter; flagged in the
+# caption below the chart.
+below = soh_df[soh_df["p50"] <= eol]
 years_to_eol = float(below["year"].iloc[0]) if len(below) else float("nan")
+
+# Cost-of-cycle: replacement pack (≈180 €/kWh) amortised flat over lifetime
+# throughput in MWh. Schimpe 2018 LFP benchmark sits near 13 €/MWh.
+_PACK_REPLACEMENT_EUR_PER_KWH = 180.0
+if not np.isnan(years_to_eol) and years_to_eol > 0 and dod > 0:
+    lifetime_mwh_per_kwh = years_to_eol * fec * dod / 1000.0
+    eur_per_mwh_cycle = _PACK_REPLACEMENT_EUR_PER_KWH / max(lifetime_mwh_per_kwh, 1e-6)
+else:
+    eur_per_mwh_cycle = float("nan")
 
 col_a, col_b = st.columns([2, 1])
 with col_a:
@@ -557,291 +555,265 @@ with col_a:
     )
     st.plotly_chart(f, use_container_width=True, config={"displayModeBar": False})
 with col_b:
-    st.metric("Years to EOL (pack)", f"{years_to_eol:.1f}" if not np.isnan(years_to_eol) else "> 20")
-    st.metric("SoH at year 10 (pack)", f"{float(soh_df.iloc[min(len(soh_df)-1, 20)]['p10']):.2f}")
+    st.metric(
+        "€ per MWh throughput",
+        f"{eur_per_mwh_cycle:.1f}" if not np.isnan(eur_per_mwh_cycle) else "—",
+    )
+    st.metric("Years to EOL (median cell)",  f"{years_to_eol:.1f}" if not np.isnan(years_to_eol) else "> 20")
     if not (preset.temp_range_C[0] <= temp <= preset.temp_range_C[1]):
         st.warning(f"Temperature outside preset range {preset.temp_range_C}.")
     if c_rate > 2.0:
         st.warning("C-rate above calibration range (>2C).")
 
-st.markdown(
-    """
-Things worth playing with: set FEC at 730 and move DoD between 60% and
-95% to reproduce the asymmetric-DoD finding. Hold everything else
-constant and walk mean SoC from 35% to 85% to watch pure calendar aging
-pull the curve down without any extra cycles. Push temperature to 35 °C
-to see the Modo 2025 ERCOT-vs-GB spread emerge from first principles.
-"""
-)
-
-# ── Model boundaries ────────────────────────────────────────
-st.markdown("---")
-st.markdown(
-    """
-## Where this model stops working
-
-- **Chemistry.** LFP/graphite only in this release. `ChemistryFamily`
-  keeps NMC/LTO/NCA slots for future calibration. NMC has a different
-  calendar-aging shape (stronger SoC dependence, lower Ea) and needs a
-  separate kernel.
-- **Temperature.** 15–60 °C calibrated (Wang 2011 + Naumann 2018
-  coverage). The 60 °C edge has a 34% residual in the Naumann back-test
-  — flagged, not suppressed; cold end sparsely sampled, use with care
-  below 15 °C.
-- **C-rate.** 0C–2C. Below 0.5C cycle term extrapolates linearly; above
-  2C the estimate is a conservative overestimate. Grid-scale LFP
-  stationary operation rarely exits this window.
-- **SoC representation.** Bucketed hours per year — transition
-  dynamics, partial cycles, and calendar/cycle coupling inside a cycle
-  are not modelled. For stationary LFP the bucketing approximation
-  holds; it will need revisiting when NMC enters.
-- **Knee point.** LLI → LLI+LAM transition (Han 2019) not modelled.
-  Most LFP cells knee below 70% SoH — our 70% EOL sits on the safe
-  side of that transition, so the omission is not load-bearing for
-  stated-life numbers.
-- **Cell-internal temperature.** `mean_temp_C` is taken as the
-  cell-internal temperature the caller has already computed. A
-  per-preset `self_heating_coeff_C_per_C2` hook exists (off by default
-  for every shipped preset) that raises the cycle-channel Arrhenius to
-  `T_amb + coeff · C²` when enabled. All charts in this note pass
-  cell-internal T directly — at high C-rate on a hot site, ambient
-  should be adjusted up ≈5–10 °C for 2C prismatic LFP or the
-  self-heating hook enabled. The calendar integration stays at
-  storage temperature (active-cycling is <20% of wall-clock hours).
-- **Pack effects.** Cell-to-cell spread is parametric, split across
-  cycle and calendar channels (both at Severson 2019 CoV 8%, combined
-  in quadrature per channel-independence assumption). Thermal gradients
-  across modules and string-level imbalance are captured in the lever
-  chart as a weakest-cell proxy — effective DoD and SoC dwell shifted
-  by the observed spread — but not from a first-principles pack model.
-  Field data anchors the span: pack fade runs ~10–20% faster than
-  best-cell fade (Schimpe 2018; Reniers 2019). A proper pack-mode
-  extension (RC thermal network × string × module topology × BMS
-  isolation policy) is a separate roadmap item gated on per-string
-  operational telemetry, not currently in the public lib. The operator
-  lever here is monitoring discipline and intervention cadence with
-  OEM, not BMS spec (set at LTSA signing). For warranty/insurance
-  floors use `return_kind="min"` on the Monte Carlo projection rather
-  than the default `"pack"` p10.
-- **Augmentation.** Out of scope. Augmentation is a commercial decision
-  about when to inject fresh capacity — not a degradation mechanism —
-  and mixing the two gives a SoH curve with stair-steps that hide what
-  the cells are actually doing. Gets its own note (timing, sizing,
-  trigger-SoH, auction vs LTSA).
-- **Field validation beyond calibration cells.** SNL Preger 2020
-  (30 A123 18650 cells, cycling) and Stanford Lam 2024 (80 K2 Energy
-  LFP18650 cells, calendar) are now wired in as out-of-sample tripwires —
-  see the back-test expander. What remains missing is a public dataset
-  on a 280 Ah prismatic LFP cell; none exists today, so prismatic-specific
-  bias is inferred from small-format anchors.
-"""
-)
-
-# ── Where this goes next ────────────────────────────────────
-st.markdown("---")
-st.markdown(
-    """
-## Where this goes next
-
-- **Note 3b — Degradation-aware vs naive trading.** Plugs the
-  state-dependent cost-of-cycle from the EUR/FEC ruler into a
-  rolling-horizon optimiser. Targets the Humiston 2026 / Holtorf 2026
-  gap — concretely, what fraction of revenue does a naive throughput
-  optimiser leave on the table against a kernel-aware one, on 2025–26
-  DE DA+ID spreads.
-- **Note 4 — Warranty, LTSA, and the augmentation decision.** Pulls
-  OEM warranty envelopes (CATL, Sungrow, Huawei on system level; BYD,
-  EVE, CATL on cell) into the same EUR/MW frame. Target question:
-  where does warranty-preserving operation give up NPV, and how
-  expensive is the preservation.
-- **NMC kernel.** Schmalstieg 2014 calibration, reusing the
-  `ChemistryFamily` slot. Unlocks hybrid PV-BESS and EV-second-life
-  cases.
-- **Pack-level thermal.** First-principles pack model — module-to-module
-  gradients, string topology, thermal coupling between weak and strong
-  cells — replacing the current weakest-cell proxy. The model itself is
-  tractable (thermal RC network coupled to the existing cell kernel);
-  the binding constraint is calibration data. Public grid-scale
-  per-string telemetry is effectively absent — RWTH Aachen ISEA's
-  M5BAT demonstrator (module-level, periodic measurements) is the only
-  realistic interim anchor. Stronger anchors wait for operational BESS
-  telemetry 12–18 months post-COD (Strübbel / fleet pulls).
-"""
+st.caption(
+    "€/MWh throughput = replacement pack (≈180 €/kWh) divided evenly across every MWh "
+    "the pack <i>discharges</i> over its life (single-direction convention — charging MWh "
+    "aren't double-counted). For a 100 MWh pack at the baseline point, one cycle at 80 % DoD "
+    "discharges 80 MWh, so the wear bill lands near €2.4k per cycle. "
+    "The Schimpe 2018 LFP benchmark sits near 13 €/MWh using 2018-era CAPEX (~€80/kWh pack); "
+    "at today's €180/kWh replacement cost the same arithmetic gives ~€30/MWh — values well "
+    "above that are the same pack working itself to death faster."
 )
 
 # ── Methodology ─────────────────────────────────────────────
 st.markdown("---")
 st.markdown("## Data Sources & Methodology")
 
+with st.expander("Which cell these curves are built on"):
+    st.markdown(
+        """
+All response curves, the DoD table, and the interactive above use the
+`baseline_fleet` preset in `lib.models.degradation`. It is **not a real
+cell** — it is a synthetic, fleet-average LFP/graphite surrogate meant
+to describe "a typical stationary LFP pack" rather than any one
+vendor's datasheet shape. The kernel's form (Wang 2011 cycle × Naumann
+2018 calendar, two-channel Arrhenius) is pinned to real LFP data; the
+preset's pre-factors are an internal calibration tagged
+`calibration_status="synthetic"` in the library.
+
+Four real-cell presets are also calibrated in `lib.models.degradation`
+— EVE LF280K, CATL EnerC+ 306 Ah, BYD MC Cube-T, Trina Elementa 280 Ah
+— and sit behind revenue/warranty notes elsewhere in the series. Read
+the absolute years-to-EOL numbers here as illustrative of the fleet
+anchor; the lever *ranking* — temperature and C-rate dominating cost,
+DoD nearly flat — is structural and reproduces across the four
+real-cell presets.
+"""
+    )
+
+with st.expander("Where this model stops working"):
+    st.markdown(
+        """
+- **Chemistry.** NMC has a different calendar-aging shape (stronger
+  SoC dependence, lower Ea) and needs a separate kernel — not in scope
+  here.
+- **Temperature.** 15–60 °C calibrated (Wang 2011 + Naumann 2018
+  coverage). At the 60 °C edge the Naumann Arrhenius power-law breaks
+  down — independently confirmed on Stanford Lam 2024 K2 cells — so the
+  calendar channel should not be trusted beyond ~50 °C. Cold end
+  sparsely sampled; use with care below 15 °C.
+- **C-rate.** 0C–2C. Below 0.5C the cycle term extrapolates linearly;
+  above 2C the estimate is a conservative overestimate. Grid-scale LFP
+  stationary operation rarely exits this window.
+- **SoC representation.** Bucketed hours per year — transition
+  dynamics, partial cycles, and calendar/cycle coupling inside a cycle
+  are not modelled. For stationary LFP the bucketing approximation
+  holds; it will need revisiting when NMC enters.
+- **Knee point.** LFP cells fade gently for most of their life — a slow, near-linear slope driven by lithium-inventory loss (LLI), lithium getting pinned into the solid-electrolyte interphase and lost to cycling. Then, somewhere past 70% SoH, a second mechanism switches on: active material begins to detach (LAM — loss of active material), and fade accelerates sharply. That inflection is the "knee". The model here stops at 70% SoH, safely upstream. Stated-life projections are unaffected; second-life modelling would need a knee-aware kernel.
+- **Cell-internal vs ambient temperature.** The Arrhenius terms
+  consume cell-internal temperature, not ambient. Two entry points
+  cover this: `project_capacity_detailed` takes cell-internal T
+  directly (the default, used throughout this note); for ambient-
+  indexed duty, `project_capacity_detailed_from_ambient` applies
+  `T_cell = T_amb + k · C²` under active cycling (typical LFP prismatic
+  `k = 2 °C/C²` → +8 °C at 2C, +0.5 °C at 0.5C). Calendar integration
+  stays on ambient because active cycling is <20 % of wall-clock time.
+  A full RC pack thermal model with cooling dynamics and module-level
+  gradients is out of scope here.
+- **Pack effects.** Cell-to-cell spread is parametric (Severson 2019
+  CoV 8%, split across cycle and calendar channels, combined in
+  quadrature). Thermal gradients and string-level imbalance aren't
+  modelled from pack topology; field data anchors the span — pack fade
+  runs ~10–20% faster than best-cell fade (Schimpe 2018; Reniers 2019).
+  The operator lever is monitoring discipline with the OEM, not BMS
+  spec (set at LTSA signing). Use `return_kind="min"` on the Monte
+  Carlo projection for warranty/insurance floors.
+- **Field validation beyond calibration cells.** SNL Preger 2020
+  (30 A123 18650 cells, cycling) and Stanford Lam 2024 (80 K2 Energy
+  LFP18650 cells, calendar) are wired in as out-of-sample regression
+  tripwires — they flag if a future recalibration makes either dataset
+  fit worse, but they are not pass criteria. No public dataset exists
+  for modern large-format prismatic LFP cells, so prismatic-specific
+  bias is inferred from small-format anchors.
+"""
+    )
+
 with st.expander("Why this kernel — the model-choice problem"):
     st.markdown(
         """
-Humiston, Cetin, de Queiroz (Energies 2026) ran the same BESS project
-through two degradation formulations — simple throughput vs rainflow —
-on 2024 ERCOT data and watched it flip from profitable to deeply
-negative. Not the dispatch strategy. Not the chemistry. The **model the
-analyst chose** decided whether the asset looked like a good deal. The
-same sensitivity shows up at our parameter scale: swinging the cycle
-pre-factor `k_cyc` by ±20% moves lifetime NPV by a magnitude comparable
-to picking one chemistry over another.
+[Humiston, Cetin, de Queiroz (Energies 2026)](https://www.mdpi.com/1996-1073/19/4/1056) ran the same BESS project
+through three degradation formulations — linear-calendar (LC),
+energy-throughput (ET), and cycle-based rainflow (CB) — on 2024 ERCOT
+data. LC and ET both returned modest annual capacity loss (~2 %) and
+left the project profitable; CB rainflow predicted substantially
+heavier degradation and flipped the valuation deeply negative. Not the
+dispatch strategy. Not the chemistry. The **model the analyst chose**
+decided whether the asset looked like a good deal. The same sensitivity
+shows up at our parameter scale: swinging the cycle pre-factor `k_cyc`
+by ±20 % moves lifetime NPV by a magnitude comparable to picking one
+chemistry over another.
 
 A model asked to rank operator choices has to be tighter than the
 choices it is ranking. Three things rule out the common shortcuts:
 
-- **Flat throughput / €-per-cycle models.** Cannot see the rest-SoC
-  lever at all (no calendar channel), and mis-price cycling in both
-  directions over asset life — see the EUR/FEC ruler section above.
-  This is the formulation that flipped profitability in Humiston 2026.
-- **Rainflow-only.** Captures cycle depth, but without an explicit
-  calendar channel it misses the Naumann SoC³ effect that drives the
-  arbitrage-vs-FCR gap — and that gap is one of the headline findings
-  here.
+- **Rainflow-only.** Captures cycle depth directly, but without an
+  explicit calendar channel it attributes all fade to cycling. Under
+  arbitrage-like duty this over-penalises wear — the formulation that
+  flipped Humiston 2026's project to deeply negative.
+- **Flat throughput / €-per-cycle models.** Cheap and well-behaved, but
+  blind to the rest-SoC lever (no calendar channel) and price every
+  cycle the same whether the pack is fresh at 50 % or tired at 85 %.
+  Conservative on headline NPV, but cannot rank the levers this note is
+  about.
 - **Single-parameter Arrhenius.** One activation energy for "aging" hides
   that cycle and calendar channels respond to temperature differently
-  (Ea ≈ 0.30 eV vs 0.18 eV in this kernel). Collapsing them misprices
+  (Ea ≈ 0.30 eV vs 0.55 eV in this kernel). Collapsing them misprices
   climate.
 
 The two-channel Wang 2011 + Naumann 2018 kernel used here keeps cycle
 and calendar separable, gives SoC its own cubic dependence, and lets
 each channel carry its own Arrhenius. It is calibrated end-to-end
-against the same Sony/Murata LFP cell Naumann tested (3.2% median
-residual, in-distribution) and cross-checked on four independent
-sources: SimSES (TU Munich's open-source reference, 0.049 median
-|ΔSoH| over 20 years), Sandia SNL Preger 2020 for the cycle channel
-(30 A123 18650 cells across a T × DoD × C-rate grid), and Stanford
-Lam 2024 for the calendar channel (80 K2 Energy LFP18650 cells across
-24/45/60/85 °C × 50/100 % SoC, up to 8 years). Numbers and scope
-caveats are in the back-test expander below.
+against the same Sony/Murata LFP cell Naumann tested (3.2 % median
+residual, in-distribution) and cross-checked on three further datasets,
+in two independence tiers. **Calibration-referential** (same Naumann
+lineage, not independent evidence): SimSES — TU Munich's open-source
+reference, which ships Naumann-row parameters for the same Sony/Murata
+US26650 cell — gives 0.048 median |ΔSoH| over 20 years; this is a
+numerical parity check that the kernel reproduces the published form,
+not confirmation from a new source. **Out-of-sample tripwires**
+(independent cells, different manufacturers): Sandia SNL Preger 2020
+for the cycle channel (30 A123 18650 cells across a T × DoD × C-rate
+grid), and Stanford Lam 2024 for the calendar channel (80 K2 Energy
+LFP18650 cells across 24/45/60/85 °C × 50/100 % SoC, up to 8 years) —
+both disclose bias at their physics edges (high-T × high-C cycling,
+calendar storage above ~50 °C) rather than blocking release.
 """
     )
 
-with st.expander("Calibration & back-test — the numbers"):
+with st.expander("Why DoD is a zero-cost lever — the Ah-throughput picture"):
     st.markdown(
         """
-Four back-tests with different standards of evidence. Two
-calibration-referential (Naumann, SimSES) that the kernel is fit
-against; two out-of-sample tripwires on cells from different
-manufacturers (SNL, Stanford) that flag regressions without being fit
-targets.
+This is the **Ah-throughput** (or **throughput-limited-aging**)
+picture of LFP — an interpretive framing, not a direct empirical law. It dates back to
+[Drouilhet & Johnson 1997](https://www.nrel.gov/docs/legosti/fy97/21978.pdf)
+for lead-acid and was generalised to Li-ion across the 2010s.
+[Preger et al. 2020 (Sandia)](https://www.batteryarchive.org/snl_study.html)
+sweep on 30 A123 18650 LFP cells showed that among the chemistries in
+the study LFP was the least DoD-sensitive, with the mid-band 40 – 60 %
+window outperforming the 0 – 100 % window and 20 – 80 % landing at
+comparable wear — directionally consistent with a near-Ah-throughput
+picture, but **not** a tight 1/DoD scaling: narrow-DoD traces in the
+same dataset are noisy enough that we drop them from our own validation
+loader. [Schmalstieg et al. 2014](https://doi.org/10.1016/j.jpowsour.2014.02.012)
+went further for NMC and formulated the cycle channel as
+√(ΔAh-throughput) rather than as a count of cycles at all.
 
-| Back-test | Metric | Result | Target |
-|---|---|---|---|
-| Naumann 2018 (17 test points, in-distribution T ≤ 40 °C, 476 measurements) | median \\|error\\| | **3.2%** | <10% ✓ |
-| Naumann 2018 (edge, T = 60 °C, 102 measurements) | median \\|error\\| | 34% | — (edge, flagged) |
-| SimSES LFP parity (5 duty scenarios × 6 year points) | median \\|ΔSoH\\| | **0.049** | <0.10 ✓ |
-| SimSES LFP parity | max \\|ΔSoH\\| | 0.19 (hot climate, 20yr) | — |
-| SNL Preger 2020 cycling, Trina preset (30 anchors, A123 18650) | MAE | **12.3 pp** | — (out-of-sample tripwire) |
-| Stanford Lam 2024 calendar, Trina preset (112 anchors, K2 LFP, T ≤ 45 °C) | MAE | **4.6 pp** | <5 pp ✓ |
-| Stanford Lam 2024 calendar, Trina preset (60/85 °C anchors) | MAE | 17 pp | — (edge, flagged) |
+**What the kernel actually does, and why it still lands flat.** This
+model does *not* give you the invariance through a single sub-linear
+DoD exponent. The cycle channel is Wang 2011 linear-in-FEC (`z_cyc = 1`)
+multiplied by an empirical super-linear DoD term from
+[Xu et al. 2018](https://doi.org/10.1109/TSG.2016.2578950) —
+effectively `Q_cyc ∝ FEC · DoD^1.5` at constant temperature and
+C-rate. **Taken alone this would make deeper cycles *more* than
+proportionally damaging — the opposite of the flat curve above.**
+What produces the flat €/MWh curve is the interplay with the
+calendar channel: calendar fade is DoD-independent
+and runs on wall-clock time, so a pack that cycles deeper reaches EOL
+sooner — in a year range where the cycle channel has accumulated less
+calendar-independent loss. The combined years-to-EOL shrinks roughly
+as 1/DoD across the operating window, and `years × FEC × DoD` ≈
+constant falls out of the two-channel balance rather than from a
+single α < 1 on cycling alone.
 
-**What the calibration-referential back-tests are.** Naumann 2018 is a
-17-point static calendar test of the same Sony/Murata LFP cell the kernel
-was calibrated against — tests the calendar channel and its SoC dependence
-directly, end-to-end. SimSES is TU Munich's open-source simulator that
-ships the same Naumann parameters; the parity test takes five stationary
-duty scenarios (baseline, deep-DoD, high-SoC dwell, FCR-narrow, hot-climate)
-and compares SoH trajectories year-by-year out to 20 years.
-
-**What the out-of-sample back-tests are — and their bias disclosure.**
-
-*SNL cycling (Preger 2020, batteryarchive.org).* 30 A123 18650 LFP cells
-on a T × DoD × C-rate cycling grid. Different cell format from our
-prismatic presets; bias is expected and material. Per-preset bias runs
-−4.7 to −19.7 pp (model under-predicts retention, i.e. over-penalises
-wear), worst at the 35 °C × 2C corner where the Trina preset shows
-−25.6 pp residual. The 12.3 pp Trina MAE in the table above is this
-bias, not a calibrated residual. Used as a regression tripwire: any
-future recalibration of `Ea_cyc_eV` / `c_rate_exponent` must improve
-this shape on SNL before shipping. **Not evidence that the kernel is
-accurate on A123 18650 at 35 °C × 2C**; it evidently is not.
-
-*Stanford calendar (Lam 2024 Joule, OSF ju325).* 80 K2 Energy LFP18650
-cells stored up to 8 years on a 4T × 2SoC grid. Different manufacturer
-from Naumann (K2 vs Sony/Murata), genuinely independent calendar anchor.
-Within Naumann's own temperature envelope (T ≤ 45 °C), bias splits by
-preset calibration quality: Trina and EVE (multi-anchor / datasheet
-anchor) fit to bias ≤3.4 pp, MAE ≤4.6 pp. Single-anchor presets (BYD,
-CATL, baseline_fleet) underpredict more (bias −6.8 to −10.1 pp) — a
-calibration-quality artefact already flagged in preset notes, not a
-model-form failure. Beyond 50 °C the Naumann Arrhenius power-law breaks
-down (Li-inventory exhaustion saturates) with bias blowing to −16 to
-−30 pp — flagged as edge, retained for drift detection only.
-
-**What they still do not cover.** A public cycling dataset on a 280 Ah
-prismatic LFP cell does not exist today — all public LFP cycling data
-is on small-format 18650. SNL validates the T × C-rate *shape*; absolute
-bias on prismatic chemistry remains inferred. Severson 2019 and Attia
-2020 are not used here — both are fast-charging (3.6C–8C) studies on
-A123 cells, outside our stationary-BESS regime and redundant with SNL's
-better grid coverage.
-
-Calibration scripts: `notes/degradation-drivers/calibration/`.
-Out-of-sample validation modules: `lib/validation/snl_lfp.py`,
-`lib/validation/stanford_calendar.py`.
+**Limits.** The invariance holds in the middle of the DoD envelope on
+LFP at moderate temperature with roughly the baseline calendar/cycle
+split. Above ~95 % DoD the stress function bends super-linearly; past
+the knee (below 70 % SoH) a different mechanism takes over. For
+cycle-dominated duty (hot cell, high FEC) the cycle channel's
+super-linear DoD starts to show through and deeper cycles cost more per
+MWh. For NMC the picture is different again. So the invariance is LFP-
+and operating-window-shaped, not universal.
 """
     )
 
 with st.expander("Kernel equations"):
     st.markdown(
         r"""
-Two-channel Qloss, cell-to-cell noise added parametrically:
+Two-channel Qloss. Cycle and calendar channels are independent; cell-to-cell
+noise is drawn separately on each and combined in quadrature.
+
+All Arrhenius terms are evaluated as **ratios referenced to 25 °C**, not as
+absolute $e^{-E_a/RT}$ factors — the pre-factors $k_{\text{cyc}}$, $k_{\text{cal}}$
+are the losses at 25 °C, and temperature only bends them via the ratio.
 
 $$
-Q_{\text{loss,cyc}} = B_{\text{cyc}} \cdot \exp\!\left(-\frac{E_{a,\text{cyc}}}{R T}\right) \cdot \left[\text{FEC} \cdot \text{DoD} \cdot C_{\text{nom}}\right]^{z_{\text{cyc}}} \cdot f_{\text{DoD}}(\text{DoD})
+\text{Arr}(T, E_a) \;\equiv\; \exp\!\left(-\frac{E_a}{k_B}\left(\frac{1}{T} - \frac{1}{T_{\text{ref}}}\right)\right),
+\quad T_{\text{ref}} = 298.15\ \text{K}
 $$
 
 $$
-Q_{\text{loss,cal}} = \left[\sum_{s} \frac{h_s}{8760} \cdot k_{\text{cal}}(s)\right] \cdot t^{\beta_{\text{cal}}} \cdot \exp\!\left(-\frac{E_{a,\text{cal}}}{R T}\right)
+Q_{\text{loss,cyc}} = k_{\text{cyc}} \cdot \text{Arr}(T_{\text{cell}}, E_{a,\text{cyc}})
+  \cdot (\text{FEC} \cdot \text{DoD})^{z_{\text{cyc}}}
+  \cdot C_{\text{rate}}^{c_{\text{exp}} \cdot z_{\text{cyc}}}
+  \cdot f_{\text{DoD}}(\text{DoD})
 $$
 
 $$
-\varepsilon_{\text{cell}} \sim \mathcal{N}(0,\, k_{\text{cyc}} \cdot \text{CoV})
+Q_{\text{loss,cal}} = k_{\text{cal}} \cdot \text{Arr}(T, E_{a,\text{cal}})
+  \cdot t^{\beta_{\text{cal}}}
+  \cdot \sum_{s} \frac{h_s}{\sum_b h_b} \cdot k_{\text{cal}}(\text{SoC}_s)
+$$
+
+$$
+\sigma \;=\; \sqrt{\,(\text{CoV}_{\text{cyc}} \cdot |Q_{\text{loss,cyc}}|)^2
+               + (\text{CoV}_{\text{cal}} \cdot |Q_{\text{loss,cal}}|)^2\,},
+\quad \varepsilon_{\text{cell}} \sim \mathcal{N}(0, \sigma)
 $$
 
 $$
 \text{SoH}(t) = 1 - Q_{\text{loss,cyc}} - Q_{\text{loss,cal}} - \varepsilon_{\text{cell}}
 $$
 
-Cycle term: Wang, Liu, Kloess 2011 LFP Arrhenius + power-law form.
-FEC exponent $z_{\text{cyc}} = 1$ (near-linear) from Naumann 2020 / Sarasketa-Zabala
-2014 LFP stationary-duty fits rather than Wang's $z \approx 0.55$, which produces
-year-1 front-loading inconsistent with LFP field data.
+where $T_{\text{cell}} = T_{\text{amb}} + c_{\text{sh}} \cdot C_{\text{rate}}^2$
+(self-heating coefficient $c_{\text{sh}} = 0$ in the default cell-internal
+entry point; the ambient entry point `project_capacity_detailed_from_ambient`
+sets $c_{\text{sh}} = 2$ °C/C² for typical LFP prismatic), $k_{\text{cal}}(\text{SoC}) = a + b\,u + c\,u^3$
+with $u = \max(\text{SoC} - 0.5,\, 0)$ (Naumann continuous form, flat below
+the thermodynamic midpoint), $f_{\text{DoD}}(\text{DoD}) = (\text{DoD}/0.80)^{0.5}$
+(empirical super-linear multiplier), and bucket hours $h_s$ are normalised by
+the total duty-hour budget $\sum_b h_b$ (== 8760 for a full-year duty).
 
-Calendar term: Naumann et al. 2018 LFP calendar model with SoC-cubic dependence
-above the thermodynamic midpoint,
+Cycle term: Wang, Liu, Hicks-Garner et al. 2011 LFP Arrhenius + power-law form.
+FEC exponent $z_{\text{cyc}} = 1$ (near-linear) from Naumann 2020 /
+Sarasketa-Zabala 2014 LFP stationary-duty fits rather than Wang's
+$z \approx 0.55$, which produces year-1 front-loading inconsistent with LFP
+field data.
+
+Calendar term: Naumann et al. 2018 LFP calendar model. SoC enters as a
+continuous cubic above the thermodynamic midpoint,
 
 $$
 k_{\text{cal}}(\text{SoC}) = a + b \cdot u + c \cdot u^3, \quad u = \max(\text{SoC} - 0.5, 0)
 $$
 
 flat below SoC=0.5 (no calendar acceleration below the midpoint), rising
-monotonically above it. Default coefficients $(a, b, c) = (0.60, 2.694, -1.218)$
-reproduce the legacy 3-bucket averages $\{0.60, 1.00, 1.60\}$ at midpoints
-$\{0.25, 0.65, 0.90\}$ so existing calibrations are numerically invariant;
-Trina's multi-anchor override $\{0.45, 1.00, 1.80\}$ resolves to
-$(0.45, 3.716, -2.127)$. Caller supplies either a bucket histogram or a finer
-SoC histogram; both paths run through the same continuous evaluator.
+monotonically above it. The duty's SoC histogram — whatever resolution the
+caller supplies — is evaluated point-by-point through this function.
 
-CoV 0.08 from Severson 2019 cell-to-cell spread measurements.
-"""
-    )
-
-with st.expander("Preset provenance"):
-    p = PRESETS["baseline_fleet"]
-    st.markdown(
-        f"""
-All charts and the interactive in this note run on a single synthetic
-preset, `baseline_fleet` — tuned to reproduce the Note 1 legacy
-~1.8%/yr fleet fade within ±0.2pp through year 20. Calibration anchor:
-**{int(p.test_anchor.cycles)} FEC @ DoD {p.test_anchor.dod:.2f}, C-rate
-{p.test_anchor.c_rate:.2f}, {p.test_anchor.temp_C:.0f} °C → retention
-{p.test_anchor.retention:.2f}**.
-
-Vendor-specific cell presets (EVE, CATL, BYD, Trina) exist in the code
-but are not exposed here — see the "A note on cross-chemistry
-comparison" section above for the methodology reasons. A credible
-head-to-head ranking needs a matched-protocol bench; published
-datasheets do not provide one.
+Cell-to-cell CoV $\sigma_{\text{CoV}} = 0.08$ from Severson 2019. Applied
+channel-independent so a pack dominated by calendar aging and a pack dominated
+by cycling see stochastic spread scaled to the actual source of fade, not a
+fixed fraction of the cycle term.
 """
     )
 
@@ -850,57 +822,24 @@ with st.expander("Literature table"):
         """
 | Paper | Role |
 |---|---|
-| Wang, Liu, Kloess 2011 | Cycle-life power law (LFP) — cycle channel |
-| Naumann, Schimpe 2018 | Calendar + SoC dependence (LFP) — calendar channel |
-| Naumann et al. 2020 | LFP cycle aging refinement (used in SimSES parity) |
-| Severson 2019 | Cell-to-cell CoV source (not used as back-test — see calibration expander) |
-| SimSES (TU Munich) | Open-source parity anchor (Sony US26650 CLFP row) |
-| Xu 2018 | DoD super-linear exponent |
-| Schimpe 2018 | ~12.8 €/MWh LFP flat-cost benchmark |
-| Kim 2022 | Experimental: DoD > C-rate for LFP |
-| Modo 2025 | Fleet-level field: ERCOT 7% vs GB 4% per 365 cycles |
-| Humiston, Cetin, de Queiroz 2026 | Model choice dominates BESS valuation |
-| Holtorf, Shin 2026 | Physics-based cost-of-cycle in rolling-horizon dispatch |
-| Esquivel, Harris 2026 (SAGE) | Synthetic aging sim — future benchmarking |
-| Han 2019 | LFP knee-point (not modelled; boundary note) |
-| Schmalstieg 2014 | NMC calendar kernel (reserved for future) |
-"""
-    )
-
-with st.expander("Reproducibility"):
-    st.markdown(
-        """
-Everything in this note runs from a clean checkout:
-
-```bash
-python notes/degradation-drivers/precompute.py
-streamlit run notes/degradation-drivers/app.py
-python notes/degradation-drivers/generate_charts.py
-
-# Calibration (re-runs the numbers in the back-test table)
-python notes/degradation-drivers/calibration/fit_naumann_calendar.py
-python notes/degradation-drivers/calibration/parity_simses.py
-```
-
-Model code: `lib/models/degradation.py` (simple closed-form),
-`lib/models/degradation_detailed.py` (Wang + Naumann, Monte Carlo).
-Parity between the two enforced by
-`tests/test_simple_detailed_parity.py` — the simple model is never
-allowed to drift from the detailed baseline by more than the tolerance
-declared there.
+| [Wang, Liu, Hicks-Garner et al. 2011](https://doi.org/10.1016/j.jpowsour.2010.11.134) | Cycle-life power law (LFP) — cycle channel |
+| [Naumann et al. 2018](https://doi.org/10.1016/j.est.2018.01.019) | Calendar + SoC dependence (LFP) — calendar channel |
+| [Naumann et al. 2020](https://doi.org/10.1016/j.jpowsour.2019.227666) | LFP cycle aging refinement (used in SimSES parity) |
+| [Naumann Mendeley dataset](https://data.mendeley.com/datasets/kxh42bfgtj/1) | Raw calendar anchors, CC BY 4.0 |
+| [Severson et al. 2019](https://doi.org/10.1038/s41560-019-0356-8) | Cell-to-cell CoV source |
+| [SimSES (TU Munich)](https://gitlab.lrz.de/open-ees-ses/simses) | Open-source parity anchor |
+| [Xu et al. 2018](https://doi.org/10.1109/TSG.2016.2578950) | DoD super-linear exponent |
+| [Schimpe et al. 2018](https://doi.org/10.1149/2.1181714jes) | LFP flat-cost benchmark (~12.8 €/MWh) |
+| [Preger et al. 2020 (Sandia / batteryarchive.org)](https://www.batteryarchive.org/snl_study.html) | SNL 18650 LFP cycling dataset |
+| [Lam et al. 2024 (Joule, OSF ju325)](https://osf.io/ju325/) | Stanford K2 18650 LFP calendar dataset |
+| [Humiston, Cetin, de Queiroz 2026 (Energies)](https://www.mdpi.com/1996-1073/19/4/1056) | Model choice dominates BESS valuation |
 """
     )
 
 # ── Closing ─────────────────────────────────────────────────
 st.markdown("---")
 render_closing(
-    "Third note in a series on BESS merchant economics. Notes 3b and 4 extend "
-    "this model into dispatch and warranty."
-)
-st.markdown(
-    '<div style="margin-top: 0.5rem; font-size: 0.95rem; color: #666;">'
-    "<b>Next:</b> Note 3b — Degradation-aware vs naive trading."
-    "</div>",
-    unsafe_allow_html=True,
+    "Part of an ongoing series on BESS merchant economics. Dispatch economics and "
+    "warranty-versus-revenue trade-offs come next."
 )
 render_footer()

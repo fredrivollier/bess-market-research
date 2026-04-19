@@ -233,6 +233,6 @@ def render_footer(author: str = "Anton Telegin", year: int = 2026,
     st.markdown(
         f'<div class="small-note" style="margin-top: 2rem; text-align: center;">'
         f'&copy; {year} <a href="{linkedin}" style="color: inherit;">{author}</a>. '
-        f'Model &amp; data: open source.</div>',
+        f'Model &amp; data: open source, MIT-licensed.</div>',
         unsafe_allow_html=True,
     )

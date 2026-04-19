@@ -1,17 +1,32 @@
 """
 Production-grade LFP/graphite degradation model (Note 3).
 
-Two-channel SoH(t):
+Two-channel SoH(t), all Arrhenius factors referenced at 25 °C:
 
-    Qloss_cyc = B_cyc · exp(−Ea_cyc / R·T) · [FEC · DoD · C_nom]^z_cyc
-              × f_dod_extra(DoD)                              # Wang 2011
+    Qloss_cyc = k_cyc · Arr(T_cell, Ea_cyc) · (FEC · DoD)^z_cyc
+              · C_rate^(c_rate_exponent · z_cyc)
+              · f_dod_extra(DoD)                               # Wang 2011 + Xu 2018
 
-    Qloss_cal = Σ_bucket (h_b / 8760) · k_cal(SoC_b) · t^β_cal
-              × exp(−Ea_cal / R·T)                            # Naumann 2018
+    Qloss_cal = k_cal · Arr(T, Ea_cal) · t^β_cal
+              · Σ_b (h_b / Σ h) · k_cal(SoC_b)                 # Naumann 2018
 
-    eps_cell  ~ N(0, k_cyc · k_cyc_cov)                       # Severson 2019
+    sigma     = sqrt( (k_cyc_cov · |Qloss_cyc|)^2
+                    + (k_cal_cov · |Qloss_cal|)^2 )
+    eps_cell  ~ N(0, sigma)                                     # Severson 2019
 
     SoH(t)    = 1 − Qloss_cyc − Qloss_cal − eps_cell
+
+Where:
+    Arr(T, Ea) ≡ exp( −Ea / k_B · (1/T − 1/T_ref) )            # ratio, not absolute
+    T_cell     = T_amb + self_heating_coeff · C_rate^2          # 0 by default
+    k_cal(SoC) = a + b·u + c·u^3,   u = max(SoC − 0.5, 0)       # Naumann continuous
+    f_dod_extra(DoD) = (DoD / 0.80)^0.5                         # empirical super-linear
+
+Channel separation lets C-rate and DoD-super-linear stress be tuned without
+distorting the FEC anchor; both noise channels scale with their own
+accumulated loss so calendar-dominated duties (FCR-narrow, storage-heavy,
+post-retirement) retain honest cell-to-cell spread instead of the degenerate
+zero-sigma the old cycle-only noise formula produced.
 
 Duty is represented as a ``DutyCycle`` with **first-class SoC distribution** —
 the integration over SoC buckets is how the model captures the "high-SoC
@@ -26,7 +41,7 @@ This is the production module. Simple closed-form parity lives in
 from __future__ import annotations
 
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Dict, Optional, Tuple, Union
 
 import numpy as np
@@ -150,6 +165,17 @@ class DutyCycle:
         parity scenarios) land on anchors and are numerically invariant; duties
         between anchors (0.65, 0.70, 0.80, …) get smoothly interpolated hour
         shares instead of the four-step branch jumps the previous version had.
+
+        Note: because the three bucket midpoints {0.25, 0.65, 0.90} are offset
+        from a uniform SoC grid, the *hours-weighted bucket mean* does not
+        exactly equal the ``mean_soc`` argument — e.g. ``mean_soc=0.55`` ≈
+        bucket-mean 0.58. The k_cal values baked into every preset
+        (``eve_lf280k``, ``trina_elementa_280ah``, …) are fit against these
+        exact allocations, so any calibrated result is self-consistent. If
+        you need calendar load evaluated at a specific SoC point (e.g. an
+        FCR ±2 % band) without that trapezoidal spread, use
+        ``constant_soc_band`` — it places all hours in a single synthetic
+        bucket at the band midpoint.
         """
         s = float(np.clip(mean_soc, 0.0, 1.0))
         # (anchor mean_soc, {low, mid, high} hours). Below 0.30 and above 0.90
@@ -228,13 +254,25 @@ class DutyCycle:
         mean_crate: float = 0.50,
         mean_temp_C: float = 25.0,
     ) -> "DutyCycle":
-        """Band-bounded SoC (e.g. FCR narrow ±2% around 50%)."""
+        """Band-bounded SoC (e.g. FCR narrow ±2% around 50%).
+
+        Unlike ``from_mean`` — which spreads hours across three coarse buckets
+        to represent a trapezoidal distribution around a mean — this factory
+        places all 8760 h in a single synthetic bucket at the band midpoint.
+        The continuous ``_k_cal_of_soc`` evaluator reads that float-label
+        directly, so a ±2 % FCR band near 50 % SoC gets the calendar weight
+        of SoC≈0.50 exactly, rather than the trapezoidal-mean-of-0.5
+        allocation that ``from_mean`` would produce. Matters whenever the
+        band is narrow relative to bucket width (FCR, sustained-SoC storage,
+        second-life benches).
+        """
         mean_dod = max(soc_high - soc_low, 0.0)
         mean_soc = 0.5 * (soc_low + soc_high)
-        return cls.from_mean(
+        label = f"{mean_soc:.4f}"
+        return cls(
             fec_per_year=fec_per_year,
             mean_dod=mean_dod,
-            mean_soc=mean_soc,
+            soc_bucket_hours={label: 8760.0},
             mean_crate=mean_crate,
             mean_temp_C=mean_temp_C,
         )
@@ -242,6 +280,27 @@ class DutyCycle:
     @property
     def total_hours(self) -> float:
         return float(sum(self.soc_bucket_hours.values()))
+
+    @property
+    def effective_mean_soc(self) -> float:
+        """Hours-weighted mean SoC of the bucket dwell.
+
+        Differs slightly from the ``mean_soc`` argument of ``from_mean``
+        because bucket midpoints {0.25, 0.65, 0.90} are not uniformly
+        spaced — e.g. ``from_mean(mean_soc=0.55)`` yields an effective
+        0.58. The detailed kernel integrates calendar load via these
+        buckets, so ``effective_mean_soc`` is what the model actually
+        "saw"; every shipped preset's k_cal is calibrated against that.
+        Use this property for sanity-checking, logging, or matching a
+        fleet-telemetry histogram against a duty reconstruction.
+        """
+        total = self.total_hours
+        if total <= 0:
+            return 0.0
+        weighted = 0.0
+        for label, hours in self.soc_bucket_hours.items():
+            weighted += hours * _label_to_soc(label)
+        return float(weighted / total)
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -281,7 +340,15 @@ def _arrhenius(temp_C: float, Ea_eV: float) -> float:
 
 
 def _f_dod_extra(dod: float) -> float:
-    """Empirical super-linear DoD multiplier (Xu 2018 / himax)."""
+    """Empirical super-linear DoD multiplier.
+
+    Fitted exponent 0.5 on top of Wang's linear-in-FEC·DoD cycle term, so the
+    effective cycle-channel DoD dependence is ``DoD^1.5`` at fixed FEC — the
+    super-linear form Xu et al. 2018 (IEEE Trans. Smart Grid,
+    doi:10.1109/TSG.2016.2578950) fit empirically on Li-ion cycling data.
+    The 0.80 normalisation matches Wang's datasheet anchor DoD so the
+    multiplier is unity there.
+    """
     return float((max(dod, 1e-3) / 0.80) ** 0.5)
 
 
@@ -369,8 +436,10 @@ def _validate_duty_in_range(duty: DutyCycle, preset: CellPreset) -> None:
     t_lo, t_hi = preset.temp_range_C
     if not (t_lo <= duty.mean_temp_C <= t_hi):
         warnings.warn(
-            f"duty.mean_temp_C={duty.mean_temp_C} outside preset range [{t_lo}, {t_hi}]; "
-            "extrapolating with edge value — treat result as illustrative.",
+            f"duty.mean_temp_C={duty.mean_temp_C} outside preset calibrated range "
+            f"[{t_lo}, {t_hi}]; kernel will evaluate at the out-of-range temperature "
+            "(no clamping), which means Arrhenius is extrapolated — treat result as "
+            "illustrative.",
             stacklevel=2,
         )
 
@@ -460,6 +529,42 @@ def project_capacity_detailed(
     if return_kind == "distribution":
         return (float(p10), float(p50), float(p90))  # type: ignore[return-value]
     raise ValueError(f"unknown return_kind={return_kind!r}")
+
+
+def project_capacity_detailed_from_ambient(
+    duty: DutyCycle,
+    years: float,
+    preset: CellPreset,
+    self_heating_k: float = 2.0,
+    n_mc: int = 200,
+    return_kind: str = "pack",
+    rng: Optional[np.random.Generator] = None,
+) -> float:
+    """Same as ``project_capacity_detailed`` but treats ``duty.mean_temp_C`` as
+    **ambient** temperature rather than cell-internal.
+
+    Self-heating under active cycling is applied via
+    ``T_cell = T_amb + self_heating_k · C_rate²`` in the cycle-channel
+    Arrhenius only; the calendar channel integrates on ambient because active
+    cycling is <20 % of wall-clock time even under arbitrage duty, so storage
+    temperature ≈ ambient.
+
+    Use this entry point when the caller has site ambient data (operator
+    telemetry, weather reanalysis) rather than thermal-chamber or BMS
+    cell-thermistor readings. For typical prismatic LFP, ``self_heating_k=2.0``
+    (°C / C²) gives +8 °C at 2C, +2 °C at 1C, +0.5 °C at 0.5C — consistent
+    with field measurements. Pass ``self_heating_k=0`` to recover the existing
+    cell-internal-T behaviour.
+    """
+    preset_ambient = replace(preset, self_heating_coeff_C_per_C2=self_heating_k)
+    return project_capacity_detailed(
+        duty=duty,
+        years=years,
+        preset=preset_ambient,
+        n_mc=n_mc,
+        return_kind=return_kind,
+        rng=rng,
+    )
 
 
 def lifecycle_value_detailed(
