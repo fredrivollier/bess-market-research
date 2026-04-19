@@ -237,10 +237,10 @@ if _view_choice == "€ per cycle":
     _cap_col, _spacer = st.columns([1, 4])
     with _cap_col:
         _capacity_mwh = st.number_input(
-            "Pack capacity (MWh)",
+            "Plant capacity (MWh)",
             min_value=1.0, max_value=1000.0, value=100.0, step=10.0,
             key="lever_chart_capacity",
-            help="Plug in your pack size to see € per cycle for your own asset.",
+            help="Plug in your plant size to see € per cycle for your own asset.",
         )
     _b_cost_cycle = _cost_eur_per_cycle("temp", 25.0, _canonical_b_y, _capacity_mwh)
     _all_cost_cycle_delta: list[float] = []
@@ -671,7 +671,7 @@ with col_b:
 
 st.caption(
     "€/MWh throughput = replacement cost (~180 €/kWh) divided across lifetime discharge MWh "
-    "(single-direction — charging not double-counted). For a 100 MWh pack at baseline, one "
+    "(single-direction — charging not double-counted). For a 100 MWh plant at baseline, one"
     "80% DoD cycle discharges 80 MWh — wear bill ~€2.4k. "
     "Schimpe 2018 benchmarked ~13 €/MWh at 2018-era CAPEX (~€80/kWh); at today's €180/kWh the "
     "same arithmetic gives ~€30/MWh. Values well above that signal a pack working itself to "
