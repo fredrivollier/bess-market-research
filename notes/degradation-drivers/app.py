@@ -442,7 +442,9 @@ render_chart_caption(
     "self-heating; at fixed ambient the two aren't fully independent."
 )
 render_takeaway(
-    "Temperature and C-rate dominate the €/MWh bill. DoD barely moves it at all."
+    "Cycle count misranks the wear. Temperature and C-rate dominate €/MWh; "
+    "rest SoC moves cost without touching the counter; cycling gently doesn't "
+    "make MWh cheaper — calendar aging still runs."
 )
 
 st.markdown(
