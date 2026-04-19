@@ -94,7 +94,7 @@ st.markdown(
     "<div style='color:#6b6b6b;font-size:0.95em;margin-bottom:0.5em'>"
     "Each panel moves one driver across its full operating range, with the other four held at the baseline point (dashed line). "
     "Toggle the axis between <b>€/MWh throughput</b> and <b>years until 70 % SoH</b>. "
-    "Read it as: <i>\"if average cycles per day drop from 2 to 1, the €/MWh bill falls — and life grows by ~5 years with it.\"</i>"
+    "Read it as: <i>\"if average cell temperature rises from 25 °C to 35 °C, the €/MWh bill jumps by ~€38 — and ~5 years of life disappear with it.\"</i>"
     "</div>",
     unsafe_allow_html=True,
 )
