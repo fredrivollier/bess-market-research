@@ -55,7 +55,7 @@ render_header(
 # ── Intro ────────────────────────────────────────────────────
 st.markdown(
     """
-Most investor-side BESS models start from the same shortcut: pick a number of cycles per year, multiply by a fade rate, call it degradation — or skip the cycles entirely and just apply a flat annual % fade. Either way, that is how lifetime revenue gets projected, how warranty calls get argued, how augmentation gets sized. The number of cycles — when it appears at all — is *the* input.
+Most investor-side BESS models start from the same shortcut: pick a number of cycles per year, multiply by a fade rate, call it degradation. That is how lifetime revenue gets projected, how warranty calls get argued, how augmentation gets sized. The number of cycles is *the* input.
 
 It is the wrong one to anchor on. Two battery packs that log an identical 730 cycles in a year can land years apart at end of life — one crosses the 70% SoH floor at year 10, the other at year 14 — purely because of what the pack did *between* those cycles. Where it rested. How warm the room was. How deep each cycle went. Cycle count catches none of it.
 
