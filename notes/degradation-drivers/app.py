@@ -225,23 +225,27 @@ _view_labels = {
     },
 }
 
-_view_choice = st.radio(
-    "Y axis",
-    list(_view_labels.keys()) + ["€ per cycle"],
-    horizontal=True,
-    label_visibility="collapsed",
-    key="lever_chart_view",
-)
-
-if _view_choice == "€ per cycle":
-    _cap_col, _spacer = st.columns([1, 4])
-    with _cap_col:
+_radio_col, _cap_col = st.columns([3, 1])
+with _radio_col:
+    _view_choice = st.radio(
+        "Y axis",
+        list(_view_labels.keys()) + ["€ per cycle"],
+        horizontal=True,
+        label_visibility="collapsed",
+        key="lever_chart_view",
+    )
+with _cap_col:
+    if _view_choice == "€ per cycle":
         _capacity_mwh = st.number_input(
             "Plant capacity (MWh)",
             min_value=1.0, max_value=1000.0, value=100.0, step=10.0,
             key="lever_chart_capacity",
             help="Plug in your plant size to see € per cycle for your own asset.",
         )
+    else:
+        _capacity_mwh = 100.0
+
+if _view_choice == "€ per cycle":
     _b_cost_cycle = _cost_eur_per_cycle("temp", 25.0, _canonical_b_y, _capacity_mwh)
     _all_cost_cycle_delta: list[float] = []
     for k in _order:
