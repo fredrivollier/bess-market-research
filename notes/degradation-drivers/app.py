@@ -55,13 +55,13 @@ render_header(
 # ── Intro ────────────────────────────────────────────────────
 st.markdown(
     """
-Most investor-side BESS models start from the same shortcut: pick a number of cycles per year, multiply by a fade rate, call it degradation. A surprising number don't even bother with the cycles — they just apply a flat annual % fade and move on. Either way, that is how lifetime revenue gets projected, how warranty calls get argued, how augmentation gets sized. The number of cycles — when it appears at all — is *the* input.
+Most investor-side BESS models start from the same shortcut: pick a number of cycles per year, multiply by a fade rate, call it degradation — or skip the cycles entirely and just apply a flat annual % fade. Either way, that is how lifetime revenue gets projected, how warranty calls get argued, how augmentation gets sized. The number of cycles — when it appears at all — is *the* input.
 
 It is the wrong one to anchor on. Two battery packs that log an identical 730 cycles in a year can land years apart at end of life — one crosses the 70% SoH floor at year 10, the other at year 14 — purely because of what the pack did *between* those cycles. Where it rested. How warm the room was. How deep each cycle went. Cycle count catches none of it.
 
 So I rebuilt the model to price them explicitly. This note moves each driver — depth of discharge, rest state, how fast it cycles, how many cycles it runs, and how warm it sits — across its full operating range and ranks them by how many years of life each one buys or burns.
 
-The ranking is on a **€/MWh-throughput** basis — the per-MWh "wear bill" a pack runs up over its lifetime, i.e. replacement-pack CAPEX amortised over the total MWh the pack discharges before it dies.
+The ranking is on a **€/MWh-throughput** basis — the per-MWh "wear bill" a pack runs up over its lifetime.
 
 **The short version: temperature and C-rate dominate everything else.** Rest SoC and cycles per day each move the bill by half as much. Depth of discharge barely moves it at all, because the years of life it burns are cancelled almost exactly by the extra MWh per cycle it delivers. Which cell you buy sets the ceiling; how the pack is run decides where inside that ceiling you end up.
 """
@@ -83,7 +83,7 @@ Five parameters set the fade rate of a stationary LFP pack. The trader moves fou
 - **Cycling rate** — full-equivalent cycles per day.
 - **Temperature** — cell-internal average over the year.
 
-Below, each lever is swept end-to-end with the other four held at a typical operator point (2 c/d, 80 % DoD, 55 % rest SoC, 0.5C, 25 °C). Toggle the y-axis between **€/MWh throughput** (pack CAPEX at 180 €/kWh amortised over lifetime MWh) and **years until 70 % SoH** — the ranking shifts depending on which you ask. The dashed horizontal line in each panel marks the baseline value.
+Below, each lever is swept end-to-end with the other four held at a typical operator point (2 c/d, 80 % DoD, 55 % rest SoC, 0.5C, 25 °C). Toggle the y-axis between **€/MWh throughput** and **years until 70 % SoH** — the ranking shifts depending on which you ask. The dashed horizontal line in each panel marks the baseline value.
 """
 )
 
@@ -147,10 +147,10 @@ def _cost_eur_per_mwh(driver_key: str, x_raw: float, years: float) -> float:
 
 
 _series = {}
-_all_years: list[float] = []
-_all_costs: list[float] = []
+_all_costs_delta: list[float] = []
+_all_years_delta: list[float] = []
 # Each sweep is an independent MC estimate of the same baseline point;
-# average them so every panel displays one canonical baseline, not per-sweep noise.
+# average them so every panel shares one canonical baseline, not per-sweep noise.
 _baseline_y_per_driver: list[float] = []
 for k in _order:
     pts = [p for p in _curve_points[k] if p["y"] is not None]
@@ -159,51 +159,62 @@ for k in _order:
     b_raw = _baseline_x[k]
     _baseline_y_per_driver.append(float(np.interp(b_raw, xs_raw, ys_abs)))
 _canonical_b_y = float(np.mean(_baseline_y_per_driver))
+_canonical_b_cost = _cost_eur_per_mwh("temp", 25.0, _canonical_b_y)
 
 for k in _order:
     pts = [p for p in _curve_points[k] if p["y"] is not None]
     xs_raw = [p["x"] for p in pts]
     ys_abs = [p["y"] for p in pts]
     b_raw = _baseline_x[k]
-    b_y = _canonical_b_y
     costs = [_cost_eur_per_mwh(k, x, y) for x, y in zip(xs_raw, ys_abs)]
-    b_cost = _cost_eur_per_mwh(k, b_raw, b_y)
-    _all_years.extend(ys_abs)
-    _all_costs.extend(costs)
+    costs_delta = [c - _canonical_b_cost for c in costs]
+    years_delta = [y - _canonical_b_y for y in ys_abs]
+    _all_costs_delta.extend(costs_delta)
+    _all_years_delta.extend(years_delta)
     _series[k] = {
         "xs_disp": [_driver_meta[k]["x_transform"](x) for x in xs_raw],
-        "years": ys_abs,
-        "costs": costs,
+        "costs_delta": costs_delta,
+        "years_delta": years_delta,
         "b_disp": _driver_meta[k]["x_transform"](b_raw),
-        "b_y": b_y,
-        "b_cost": b_cost,
     }
 
 
 def _pad_range(vals: list[float], pad: float = 0.10) -> list[float]:
     lo, hi = min(vals), max(vals)
     span = hi - lo
-    return [max(0, lo - pad * span), hi + pad * span]
+    return [lo - pad * span, hi + pad * span]
+
+
+def _fmt_delta_eur(v: float) -> str:
+    sign = "+" if v >= 0 else "−"
+    return f"{sign}€{abs(v):.0f}"
+
+
+def _fmt_delta_yr(v: float) -> str:
+    sign = "+" if v >= 0 else "−"
+    return f"{sign}{abs(v):.1f} yr"
 
 
 _view_labels = {
     "€/MWh throughput": {
-        "series_key": "costs",
-        "baseline_key": "b_cost",
-        "y_label": "€ per MWh throughput",
-        "y_range": _pad_range(_all_costs),
-        "fmt": lambda v: f"€{v:.0f}",
+        "series_key": "costs_delta",
+        "y_label": "Δ €/MWh vs baseline",
+        "y_range": _pad_range(_all_costs_delta),
+        "fmt": _fmt_delta_eur,
         "higher_is_better": False,
         "hover_unit": " €/MWh",
+        "abs_anchor": _canonical_b_cost,
+        "abs_fmt": lambda v: f"€{v:.0f}/MWh",
     },
     "Years to end of life": {
-        "series_key": "years",
-        "baseline_key": "b_y",
-        "y_label": "Years until 70 % SoH",
-        "y_range": _pad_range(_all_years),
-        "fmt": lambda v: f"{v:.1f}",
+        "series_key": "years_delta",
+        "y_label": "Δ years vs baseline",
+        "y_range": _pad_range(_all_years_delta),
+        "fmt": _fmt_delta_yr,
         "higher_is_better": True,
         "hover_unit": " yr",
+        "abs_anchor": _canonical_b_y,
+        "abs_fmt": lambda v: f"{v:.1f} yr",
     },
 }
 
@@ -226,7 +237,7 @@ for i, k in enumerate(_order):
     xs_disp = s["xs_disp"]
     b_disp = s["b_disp"]
     ys = s[_view["series_key"]]
-    b_val = s[_view["baseline_key"]]
+    b_val = 0.0
     axis_suffix = "" if i == 0 else str(i + 1)
 
     # Horizontal baseline-value reference line
@@ -274,9 +285,10 @@ for i, k in enumerate(_order):
         x0=b_disp, x1=b_disp, y0=0, y1=1,
         line=dict(color="#888", width=1.1, dash="dash"),
     )
-    # Baseline value label at the baseline point
+    # Baseline value label at the baseline point — shows absolute anchor
+    # (€31 / 9.8 yr) so the reader has a unit-aware number behind the 0 %.
     fig1.add_annotation(
-        x=b_disp, y=b_val, text=_view["fmt"](b_val),
+        x=b_disp, y=b_val, text=_view["abs_fmt"](_view["abs_anchor"]),
         showarrow=False, yshift=-14,
         font=dict(size=11, color="#555"),
         bgcolor="rgba(246,243,236,0.85)",
@@ -351,11 +363,11 @@ st.markdown(
 )
 st.plotly_chart(fig1, use_container_width=True, config={"displayModeBar": False})
 render_chart_caption(
-    "DoD barely moves the €/MWh bill (~€31 either way) but pulls years-to-EOL "
-    "from 15 down to 8. Cycles per day behaves similarly. Rest SoC moves both. "
-    "Baseline ≈ €31 per MWh / 10 yr. Temperature here is <b>cell-internal</b>, "
-    "so the C-rate panel already includes self-heating; at fixed ambient the "
-    "two aren't fully independent."
+    "Axes show deltas from baseline. Baseline anchor ≈ €31/MWh and 9.8 years "
+    "to 70 % SoH. DoD barely moves the €/MWh bill but cuts years-to-EOL by "
+    "~4 yr; cycles/day behaves similarly. Rest SoC moves both. Temperature "
+    "here is <b>cell-internal</b>, so the C-rate panel already includes "
+    "self-heating; at fixed ambient the two aren't fully independent."
 )
 render_takeaway(
     "Temperature and C-rate dominate the €/MWh bill. DoD barely moves it at all."
@@ -365,15 +377,13 @@ st.markdown(
     """
 Three things jump out.
 
-**Rest SoC is the invisible lever.** The pack sits idle most of the day. Where it sits decides how fast it ages, with zero extra cycles on the counter and zero extra MWh moved — so every year of life rest SoC costs lands straight on the €/MWh bill. An arbitrage pack charged up to 85% waiting for the morning peak carries a markedly higher per-MWh cost than an FCR pack idling near 50%. No cycle counter shows it; the chart does.
+**Rest SoC is the invisible lever.** The pack sits idle most of the day. Where it sits decides how fast it ages, with zero extra cycles on the counter and zero extra MWh moved — so every year of life rest SoC costs lands straight on the €/MWh bill. An arbitrage pack charged up to 85% waiting for the morning peak carries a markedly higher per-MWh cost than an FCR pack resting near 50%. No cycle counter shows it; the chart does.
 
 **Cycles per day — nearly flat on cost.** Running the pack twice as hard (1 → 2.5 c/d) cuts life roughly in half, but pushes ~2.5× more MWh per year, so the €/MWh number drifts only ~€12 across the full range. The industry's headline metric is an accounting artefact on the cost side.
 
 **Temperature and C-rate do the heavy lifting.** Both panels bend sharply: a 10 °C lift or a doubling of C-rate each move the bill by more than rest SoC and FEC combined. These are the two knobs that actually decide whether a pack makes its warranty or not.
 
-One thing the chart doesn't label directly: duration. 1h vs 2h vs 4h doesn't enter as an independent lever — it enters through C-rate. A 1h battery discharging a full cycle runs at 1C; a 4h battery at 0.25C. For the same daily dispatch, the short-duration pack sits higher on the C-rate axis, and the C-rate panel is where that shows up. A 2h pack run like a typical arbitrage schedule (0.5C average) is the baseline here; a 1h pack running the same revenue would roughly double C-rate and land on the steep part of the C-rate curve.
-
-And then there's DoD — which deserves its own section.
+**Duration hides inside C-rate.** 1h vs 2h vs 4h isn't its own axis on the chart — it enters through C-rate. A 1h battery discharging a full cycle runs at 1C; a 4h battery at 0.25C. For the same daily dispatch, the short-duration pack sits higher on the C-rate axis, and the C-rate panel is where that shows up. A 2h pack run like a typical arbitrage schedule (0.5C average) is the baseline here; a 1h pack running the same revenue would roughly double C-rate and land on the steep part of the C-rate curve.
 """
 )
 
@@ -441,7 +451,7 @@ _INTERACTIVE_PRESETS = {
     "Texas summer": {
         "vals": dict(dod=0.90, fec=730, mean_soc=0.65, c_rate=0.50, temp=30),
         "desc": "ERCOT-style duty on an HVAC-cooled site: cell-internal 30 °C "
-                "(the extra 5 °C over a German pack costs years, not months). "
+                "(vs 25 °C baseline — the extra 5 °C costs years, not months). "
                 "This is the climate lever working on top of an aggressive schedule.",
     },
     "Gentle": {
@@ -607,11 +617,21 @@ with st.expander("Where this model stops working"):
 - **Chemistry.** NMC has a different calendar-aging shape (stronger
   SoC dependence, lower Ea) and needs a separate kernel — not in scope
   here.
-- **Temperature.** 15–60 °C calibrated (Wang 2011 + Naumann 2018
-  coverage). At the 60 °C edge the Naumann Arrhenius power-law breaks
-  down — independently confirmed on Stanford Lam 2024 K2 cells — so the
-  calendar channel should not be trusted beyond ~50 °C. Cold end
-  sparsely sampled; use with care below 15 °C.
+- **Temperature — calibration window.** 15–60 °C calibrated (Wang 2011
+  + Naumann 2018 coverage). At the 60 °C edge the Naumann Arrhenius
+  power-law breaks down — independently confirmed on Stanford Lam 2024
+  K2 cells — so the calendar channel should not be trusted beyond
+  ~50 °C. Cold end sparsely sampled; use with care below 15 °C.
+- **Temperature — cell-internal vs ambient.** The Arrhenius terms
+  consume cell-internal temperature, not ambient.
+  `project_capacity_detailed` takes cell-internal T directly (the
+  default, used throughout this note);
+  `project_capacity_detailed_from_ambient` applies
+  `T_cell = T_amb + k · C²` under active cycling (typical LFP prismatic
+  `k = 2 °C/C²` → +8 °C at 2C, +0.5 °C at 0.5C). Calendar integration
+  stays on ambient because active cycling is <20 % of wall-clock time.
+  A full RC pack thermal model with cooling dynamics and module-level
+  gradients is out of scope here.
 - **C-rate.** 0C–2C. Below 0.5C the cycle term extrapolates linearly;
   above 2C the estimate is a conservative overestimate. Grid-scale LFP
   stationary operation rarely exits this window.
@@ -620,16 +640,6 @@ with st.expander("Where this model stops working"):
   are not modelled. For stationary LFP the bucketing approximation
   holds; it will need revisiting when NMC enters.
 - **Knee point.** LFP cells fade gently for most of their life — a slow, near-linear slope driven by lithium-inventory loss (LLI), lithium getting pinned into the solid-electrolyte interphase and lost to cycling. Then, somewhere past 70% SoH, a second mechanism switches on: active material begins to detach (LAM — loss of active material), and fade accelerates sharply. That inflection is the "knee". The model here stops at 70% SoH, safely upstream. Stated-life projections are unaffected; second-life modelling would need a knee-aware kernel.
-- **Cell-internal vs ambient temperature.** The Arrhenius terms
-  consume cell-internal temperature, not ambient. Two entry points
-  cover this: `project_capacity_detailed` takes cell-internal T
-  directly (the default, used throughout this note); for ambient-
-  indexed duty, `project_capacity_detailed_from_ambient` applies
-  `T_cell = T_amb + k · C²` under active cycling (typical LFP prismatic
-  `k = 2 °C/C²` → +8 °C at 2C, +0.5 °C at 0.5C). Calendar integration
-  stays on ambient because active cycling is <20 % of wall-clock time.
-  A full RC pack thermal model with cooling dynamics and module-level
-  gradients is out of scope here.
 - **Pack effects.** Cell-to-cell spread is parametric (Severson 2019
   CoV 8%, split across cycle and calendar channels, combined in
   quadrature). Thermal gradients and string-level imbalance aren't
@@ -839,7 +849,8 @@ with st.expander("Literature table"):
 # ── Closing ─────────────────────────────────────────────────
 st.markdown("---")
 render_closing(
-    "Part of an ongoing series on BESS merchant economics. Dispatch economics and "
-    "warranty-versus-revenue trade-offs come next."
+    "Part of an ongoing series on BESS merchant economics. Next: what a trader who "
+    "prices this wear into every bid does differently — and how much revenue a "
+    "warranty-respecting schedule leaves on the table."
 )
 render_footer()
