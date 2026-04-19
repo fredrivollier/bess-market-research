@@ -630,24 +630,49 @@ with col_a:
     f.add_hline(y=eol, line_dash="dot", line_color="#888", annotation_text=f"EOL {int(eol*100)}%")
 
     # Illustrative knee: past 70 % SoH the physics model stops being reliable
-    # (LAM kicks in, fade accelerates). Show a muted dashed extension so the
-    # reader sees what typically happens — not a model output.
-    if not np.isnan(years_to_eol) and years_to_eol < 19.0:
-        knee_end_year = min(years_to_eol + 1.8, 20.0)
+    # (LAM kicks in, fade accelerates). Shown as a quadratic-drop curve with
+    # an uncertainty band — this is a schematic, not a model output.
+    if not np.isnan(years_to_eol) and years_to_eol < 19.5:
+        knee_start = years_to_eol
+        horizon = min(2.5, 20.0 - knee_start)
+        knee_t = np.linspace(0.0, horizon, 30)
+        knee_x = knee_start + knee_t
+        # Carry pre-knee slope and add quadratic acceleration (super-linear LAM).
+        pre_slope = max((1.0 - eol) / max(knee_start, 0.5), 0.02)
+        knee_y = eol - pre_slope * knee_t - 0.06 * knee_t ** 2
+        # Uncertainty band: knee onset year varies cell-to-cell, slope varies.
+        drop = np.maximum(eol - knee_y, 0.0)
+        knee_y_hi = np.clip(eol - 0.55 * drop, 0.0, eol)
+        knee_y_lo = np.clip(eol - 1.45 * drop, 0.0, eol)
+
         f.add_trace(go.Scatter(
-            x=[years_to_eol, knee_end_year],
-            y=[eol, 0.50],
-            mode="lines",
-            line=dict(color="#c15a5a", width=2, dash="dash"),
-            name="illustrative knee",
-            hovertemplate="Past EOL the curve typically accelerates (LAM).<extra></extra>",
+            x=np.concatenate([knee_x, knee_x[::-1]]),
+            y=np.concatenate([knee_y_hi, knee_y_lo[::-1]]),
+            fill="toself",
+            fillcolor="rgba(193,90,90,0.15)",
+            line=dict(color="rgba(0,0,0,0)"),
+            showlegend=False,
+            hoverinfo="skip",
         ))
+        f.add_trace(go.Scatter(
+            x=knee_x, y=knee_y,
+            mode="lines",
+            line=dict(color="#c15a5a", width=2.2, dash="dot"),
+            name="illustrative knee (LAM)",
+            hovertemplate=(
+                "<b>Illustrative</b>, not modelled<br>"
+                "Past 70 %% SoH active material loss kicks in and fade accelerates "
+                "super-linearly. Exact shape is cell-specific.<extra></extra>"
+            ),
+        ))
+        _tip_idx = int(len(knee_x) * 0.75)
         f.add_annotation(
-            x=knee_end_year, y=0.50,
-            text="<i>illustrative knee<br>(LAM acceleration)</i>",
+            x=knee_x[_tip_idx], y=knee_y[_tip_idx],
+            text="<i>LAM acceleration<br>(illustrative, not modelled)</i>",
             showarrow=False,
-            xanchor="right", yanchor="bottom",
+            xanchor="left", yanchor="top",
             font=dict(size=10, color="#c15a5a"),
+            xshift=10, yshift=-4,
         )
 
     f.update_layout(
