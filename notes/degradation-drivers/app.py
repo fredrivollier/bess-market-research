@@ -546,7 +546,7 @@ st.markdown(
     f"margin:0.3em 0.2em 0.8em 0.2em;max-width:1000px;font-size:0.9em'>"
     f"<span style='color:#1aa179;font-weight:700;flex-shrink:0'>"
     f"{_active_preset} →</span>"
-    f"<span style='color:#444'>{_INTERACTIVE_PRESETS[_active_preset]['desc']}</span>"
+    f"<span style='color:#444;text-wrap:pretty'>{_INTERACTIVE_PRESETS[_active_preset]['desc']}</span>"
     f"</div>",
     unsafe_allow_html=True,
 )
