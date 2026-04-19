@@ -379,7 +379,7 @@ Three things jump out.
 
 **Rest SoC is the invisible lever.** The pack sits idle most of the day. Where it sits decides how fast it ages, with zero extra cycles on the counter and zero extra MWh moved — so every year of life rest SoC costs lands straight on the €/MWh bill. An arbitrage pack charged up to 85% waiting for the morning peak carries a markedly higher per-MWh cost than an FCR pack resting near 50%. No cycle counter shows it; the chart does.
 
-**Cycles per day — nearly flat on cost.** Running the pack twice as hard (1 → 2.5 c/d) cuts life roughly in half, but pushes ~2.5× more MWh per year, so the €/MWh number drifts only ~€12 across the full range. The industry's headline metric is an accounting artefact on the cost side.
+**Cycles per day — nearly flat on cost, but floored from below.** Running the pack twice as hard (1 → 2.5 c/d) cuts life roughly in half but pushes ~2.5× more MWh per year, so the €/MWh number drifts only modestly. Going the other way — below ~1 c/d — the curve bends **up**: calendar aging runs on wall-clock time, so a pack that cycles rarely still ages, and CAPEX spreads across fewer MWh. The industry's headline metric is an accounting artefact on the cost side, especially in the *more-is-better* direction.
 
 **Temperature and C-rate do the heavy lifting.** Both panels bend sharply: a 10 °C lift or a doubling of C-rate each move the bill by more than rest SoC and FEC combined. These are the two knobs that actually decide whether a pack makes its warranty or not.
 
