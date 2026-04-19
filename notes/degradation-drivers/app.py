@@ -450,7 +450,7 @@ render_takeaway(
 st.markdown(
     """
 *How an investor should read the two views: **€/MWh throughput** is the
-objective (unit economics of every MWh the pack delivers); **years to
+objective (unit economics of every MWh the plant delivers); **years to
 EOL** is the constraint (warranty, debt tenor, augmentation timing).*
 
 Three things jump out.
