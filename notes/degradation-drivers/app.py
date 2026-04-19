@@ -449,6 +449,10 @@ render_takeaway(
 
 st.markdown(
     """
+*How an investor should read the two views: **€/MWh throughput** is the
+objective (unit economics of every MWh the pack delivers); **years to
+EOL** is the constraint (warranty, debt tenor, augmentation timing).*
+
 Three things jump out.
 
 **Rest SoC is the invisible lever.** The pack sits idle most of the day; where it rests decides how fast it ages. Zero extra cycles, zero extra MWh — every year of life rest SoC costs lands straight on the €/MWh bill. An arbitrage pack parked at 85% waiting for the morning peak carries a higher per-MWh cost than an FCR pack resting near 50%. No cycle counter shows it; the chart does.
