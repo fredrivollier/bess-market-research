@@ -820,19 +820,19 @@ fixed fraction of the cycle term.
 with st.expander("Literature table"):
     st.markdown(
         """
-| Paper | Role |
+| Paper | Role in this note |
 |---|---|
-| [Wang, Liu, Hicks-Garner et al. 2011](https://doi.org/10.1016/j.jpowsour.2010.11.134) | Cycle-life power law (LFP) — cycle channel |
-| [Naumann et al. 2018](https://doi.org/10.1016/j.est.2018.01.019) | Calendar + SoC dependence (LFP) — calendar channel |
-| [Naumann et al. 2020](https://doi.org/10.1016/j.jpowsour.2019.227666) | LFP cycle aging refinement (used in SimSES parity) |
-| [Naumann Mendeley dataset](https://data.mendeley.com/datasets/kxh42bfgtj/1) | Raw calendar anchors, CC BY 4.0 |
-| [Severson et al. 2019](https://doi.org/10.1038/s41560-019-0356-8) | Cell-to-cell CoV source |
-| [SimSES (TU Munich)](https://gitlab.lrz.de/open-ees-ses/simses) | Open-source parity anchor |
-| [Xu et al. 2018](https://doi.org/10.1109/TSG.2016.2578950) | DoD super-linear exponent |
-| [Schimpe et al. 2018](https://doi.org/10.1149/2.1181714jes) | LFP flat-cost benchmark (~12.8 €/MWh) |
-| [Preger et al. 2020 (Sandia / batteryarchive.org)](https://www.batteryarchive.org/snl_study.html) | SNL 18650 LFP cycling dataset |
-| [Lam et al. 2024 (Joule, OSF ju325)](https://osf.io/ju325/) | Stanford K2 18650 LFP calendar dataset |
-| [Humiston, Cetin, de Queiroz 2026 (Energies)](https://www.mdpi.com/1996-1073/19/4/1056) | Model choice dominates BESS valuation |
+| Wang, Liu, Hicks-Garner et al. 2011 — *[Cycle-life model for graphite-LiFePO4 cells](https://doi.org/10.1016/j.jpowsour.2010.11.134)* | Cycle-life power law (LFP) — cycle channel |
+| Naumann et al. 2018 — *[Analysis and modeling of calendar aging of a commercial LiFePO4/graphite cell](https://doi.org/10.1016/j.est.2018.01.019)* | Calendar + SoC dependence (LFP) — calendar channel |
+| Naumann et al. 2020 — *[Analysis and modeling of cycle aging of a commercial LiFePO4/graphite cell](https://doi.org/10.1016/j.jpowsour.2019.227666)* | LFP cycle aging refinement (used in SimSES parity) |
+| Naumann et al. — *[Data for: Analysis and modeling of calendar aging of a commercial LiFePO4/graphite cell](https://data.mendeley.com/datasets/kxh42bfgtj/1)* (Mendeley, CC BY 4.0) | Raw calendar anchors |
+| Severson et al. 2019 — *[Data-driven prediction of battery cycle life before capacity degradation](https://doi.org/10.1038/s41560-019-0356-8)* (Nature Energy) | Cell-to-cell CoV source |
+| TU Munich — *[SimSES: open-source techno-economic simulation of stationary energy storage](https://gitlab.lrz.de/open-ees-ses/simses)* | Parity anchor for the Naumann kernel |
+| Xu et al. 2018 — *[Modeling of Lithium-Ion Battery Degradation for Cell Life Assessment](https://doi.org/10.1109/TSG.2016.2578950)* (IEEE TSG) | DoD super-linear exponent |
+| Schimpe et al. 2018 — *[Comprehensive Modeling of Temperature-Dependent Degradation Mechanisms in Lithium Iron Phosphate Batteries](https://doi.org/10.1149/2.1181714jes)* (J. Electrochem. Soc.) | LFP flat-cost benchmark (~12.8 €/MWh) |
+| Preger et al. 2020 — *[Degradation of Commercial Lithium-Ion Cells as a Function of Chemistry and Cycling Conditions](https://www.batteryarchive.org/snl_study.html)* (Sandia / batteryarchive.org) | SNL 18650 LFP cycling dataset (out-of-sample tripwire) |
+| Lam et al. 2024 — *[Stanford Long-Term Calendar Aging Dataset](https://osf.io/ju325/)* (Joule / OSF) | K2 18650 LFP calendar dataset (out-of-sample tripwire) |
+| Humiston, Cetin, de Queiroz 2026 — *[Evaluating Battery Degradation Models in Rolling-Horizon BESS Arbitrage Optimization](https://www.mdpi.com/1996-1073/19/4/1056)* (Energies) | Model-choice sensitivity in BESS valuation |
 """
     )
 
