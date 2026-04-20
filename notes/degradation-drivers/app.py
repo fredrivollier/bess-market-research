@@ -57,13 +57,13 @@ data = load_precomputed()
 # ── Intro ────────────────────────────────────────────────────
 st.markdown(
     """
-Most investor-side BESS models reduce degradation to a two-step shortcut: pick a number of cycles per year, multiply by a fade rate, read off the year the battery hits its warranty floor. Cycle count goes in; years-to-end-of-life (years-to-EOL) comes out — and that year is what lands in the warranty schedule and the augmentation plan. One number stands in for "degradation".
+Most investor-side BESS models reduce degradation to a two-step shortcut: pick a number of cycles per year, multiply by a fade rate, read off the year the battery's capacity drops below the warranty floor (typically 70 %). Cycle count goes in; years-to-end-of-life (years-to-EOL) comes out — and that year is what lands in the warranty schedule and the augmentation plan. One number stands in for "degradation".
 
 Both ends of the chain are wrong.
 
 **Cycle count is a bad input.** Two plants that log an identical 730 cycles in a year can land years apart at end of life — one at year 10, the other at year 14 — purely because of what happened *between* those cycles. Where it rested. How warm the cell got. How deep each cycle went. Cycle count catches none of it.
 
-**Years-to-EOL is a bad output.** It answers a horizon question — *when does the battery hit its warranty floor?* — not a unit-economics question — *how many MWh does the plant deliver over its life, and what does each MWh cost me in wear?* The two questions rank operator choices differently — sometimes in opposite directions. A plant that lasts the longest often delivers the fewest MWh, and carries the highest cost per MWh it sells.
+**Years-to-EOL is a bad output.** It answers a horizon question — *when does the battery drop to the warranty floor?* — not a unit-economics question — *how many MWh does the plant deliver over its life, and how much wear does each MWh cause?* The two questions point to different operator choices — sometimes opposite ones. A plant that lasts the longest often delivers the fewest MWh, and carries the highest cost per MWh it sells.
 
 This note prices these factors explicitly. It moves each driver — depth of discharge, rest state, how fast it cycles, how many cycles it runs, and how warm it sits — across its full operating range and ranks them by the per-MWh wear bill they carry.
 
@@ -77,7 +77,7 @@ st.markdown(
     """
 ### Why years-to-EOL misses lifetime revenue
 
-Here is what the horizon-vs-unit-economics gap looks like in a chart. Three cycling intensities, same cell, same CAPEX. The battery's annual throughput falls with SoH, so the area under each curve is the plant's lifetime MWh — and divided by CAPEX, it's the €/MWh throughput bill.
+Here is what the horizon-vs-unit-economics gap looks like in a chart. Three cycling intensities, same cell, same CAPEX. The battery's annual throughput falls with SoH, so the area under each curve is the plant's lifetime MWh delivered — and divided by CAPEX, it's the €/MWh throughput bill.
 """
 )
 
@@ -172,18 +172,18 @@ fig_intro.update_layout(
 st.plotly_chart(fig_intro, use_container_width=True, config={"displayModeBar": False})
 st.caption(
     f"Illustrative: CAPEX €{_INTRO_CAPEX_EUR_PER_MWH/1000:,.0f}k per MWh installed, "
-    f"80 % DoD, SoH fade to 70 % by the stated year with β = {_INTRO_BETA}. "
+    f"80 % DoD, SoH fading to 70 % by the stated year along a sub-linear curve. "
     "MWh per year falls with SoH, so the curve shape is the SoH decay. "
     "Area under each curve = lifetime MWh delivered; CAPEX ÷ area = €/MWh throughput."
 )
 
 st.markdown(
     """
-Read the chart as three lifetime budgets, not three calendars. Light duty's battery survives the longest — 15 years vs Hard duty's 8.5 — and over those 6.5 extra years it still delivers ~1,500 MWh *less* energy per MWh of installed capacity (3,670 vs 5,202). Same cell, same CAPEX, different dispatch intensity. The longer-lived plant amortises its CAPEX at ~€55/MWh; the shorter-lived one, at ~€38/MWh. Running gently doesn't save the battery money — it stretches the bill across fewer MWh.
+Read the chart as three lifetime budgets, not three calendars. Light duty's battery survives the longest — 15 years vs 8.5 for Hard duty. But despite living 6.5 years longer, it delivers less energy in total: 3,670 MWh per MWh of installed capacity, vs 5,202 for Hard duty — about 1,500 MWh less. Same cell, same CAPEX, different dispatch intensity. The long-lived plant ends up costing ~€55 per MWh delivered; the short-lived one, ~€38. Running gently doesn't save money — it stretches the bill across fewer MWh.
 
 Moving from Hard to Light adds 6.5 years but subtracts lifetime revenue. That's what years-to-EOL hides: it mixes *how fast each MWh wears the battery* with *how many MWh the plant actually delivers*, and the second effect dominates here. Fewer cycles × more calendar time means fewer MWh to absorb the same CAPEX, so the gentle schedule is the most expensive per MWh delivered.
 
-**Years-to-EOL** is the constraint — warranty, debt tenor, augmentation timing. **€/MWh throughput** is the objective — what a dispatch decision prices against. **€ per cycle** scales to plant size. Years-to-EOL tells you when to worry; €/MWh tells you what to bid.
+So which factors actually drive that fade rate?
 """
 )
 
@@ -343,6 +343,8 @@ _view_labels = {
     },
 }
 
+st.session_state.setdefault("lever_chart_capacity", 100.0)
+
 _radio_col, _cap_col = st.columns([3, 1])
 with _radio_col:
     _view_choice = st.radio(
@@ -356,12 +358,12 @@ with _cap_col:
     if _view_choice == "€ per cycle":
         _capacity_mwh = st.number_input(
             "Plant capacity (MWh)",
-            min_value=1.0, max_value=1000.0, value=100.0, step=10.0,
+            min_value=1.0, max_value=1000.0, step=10.0,
             key="lever_chart_capacity",
-            help="Plug in your plant size to see € per cycle for your own asset.",
+            help="Drives the € per cycle view here and the metric in the interactive below.",
         )
     else:
-        _capacity_mwh = 100.0
+        _capacity_mwh = float(st.session_state["lever_chart_capacity"])
 
 if _view_choice == "€ per cycle":
     _b_cost_cycle = _cost_eur_per_cycle("temp", 25.0, _canonical_b_y, _capacity_mwh)
@@ -562,46 +564,15 @@ render_chart_caption(
     "runs at 1C, a 4h at 0.25C; the baseline 0.5C assumes a 2h battery."
 )
 render_takeaway(
-    "Cycle count is a bad proxy for wear. Temperature and C-rate dominate "
-    "the €/MWh bill. Rest SoC shifts it even while the battery isn't cycling — "
-    "the counter won't show that. And cycling less doesn't scale MWh cheaper: "
-    "calendar aging keeps running whether the battery is working or resting."
+    "Temperature and C-rate dominate the €/MWh bill. Rest SoC shifts it "
+    "even while the battery isn't cycling — the cycle counter won't show "
+    "that. And cycling less doesn't scale MWh cheaper: calendar aging "
+    "keeps running whether the battery is working or resting."
 )
 
 st.markdown(
     """
-Two findings jump out.
-
-**Rest SoC is the invisible lever.** The battery sits idle most of the day; where it rests decides how fast it ages. Zero extra cycles, zero extra MWh — every year of life rest SoC costs lands straight on the €/MWh bill. An arbitrage battery parked at 85% waiting for the morning peak carries a higher per-MWh cost than an FCR battery resting near 50%. No cycle counter shows it; the chart does.
-
-**Cycles per day — not what the counter suggests.** Running the battery harder (2 → 2.5 c/d) lowers the €/MWh bill slightly below baseline; running it lighter (2 → 1 c/d) raises it by ~€10. Calendar aging runs on wall-clock time: a battery that cycles rarely still ages, spreading CAPEX across fewer MWh. Concretely: at 1 c/d the battery lasts a bit longer (~12 years vs 9.8), but delivers half the MWh per year. Fewer lifetime MWh, same CAPEX → higher €/MWh. The industry's headline metric implies gentle is cheaper. It isn't.
-"""
-)
-
-# ── The DoD invariance ──────────────────────────────────────
-st.markdown("---")
-st.markdown(
-    """
-### Depth of discharge is a zero-cost lever
-
-Deeper cycles age the battery faster, but each cycle delivers more energy — the two effects cancel. The cell carries a fixed **lifetime-throughput budget** (~5.7 MWh/kWh for this preset); DoD decides whether you spend
-it in many shallow cycles or few deep ones.
-
-That's why the €/MWh curve is nearly flat: cycling at 50% or 95% DoD
-costs about the same per MWh. Many dispatch optimisers treat DoD as
-the cost-of-cycling lever: deeper = faster fade = more
-expensive. For LFP in the 50–95% DoD window, that framing does not hold.
-
-The pattern is LFP-shaped: NMC behaves differently,
-and even LFP bends above ~95 % DoD.
-
-**Practical implication:** within the LFP window, DoD decides **how fast
-you spend the budget**, not **how much each MWh costs**. Choosing 95%
-over 80% compresses the same lifetime MWh into fewer years, with more
-energy per cycle to trade. Whether that compression is worth doing
-depends on price spreads — the question
-[*Cycles & Marginal Value*](https://de-bess-cycles.streamlit.app)
-answers — not on cost-per-MWh.
+**Depth of discharge is a zero-cost lever.** Deeper cycles age the battery faster, but each cycle delivers more energy — the two effects cancel. The €/MWh curve is nearly flat: cycling at 50 % or 95 % DoD costs about the same per MWh. Many dispatch optimisers treat DoD as *the* cost-of-cycling lever — deeper = faster fade = more expensive. For LFP in the 50–95 % DoD window, that framing is wrong: DoD decides **how fast** you spend the lifetime-throughput budget (~5.7 MWh/kWh for this preset), not **how much each MWh costs**. The pattern is LFP-specific — NMC behaves differently, and even LFP bends above ~95 % DoD. Whether to compress more energy into fewer years depends on price spreads, not cost-per-MWh — the question [*Cycles & Marginal Value*](https://de-bess-cycles.streamlit.app) answers.
 """
 )
 
@@ -715,11 +686,17 @@ years_to_eol = float(below["year"].iloc[0]) if len(below) else float("nan")
 # Cost-of-cycle: replacement pack (≈180 €/kWh) amortised flat over lifetime
 # throughput in MWh. Schimpe 2018 LFP benchmark sits near 13 €/MWh.
 _PACK_REPLACEMENT_EUR_PER_KWH = 180.0
+_plant_capacity_mwh = float(st.session_state.get("lever_chart_capacity", 100.0))
 if not np.isnan(years_to_eol) and years_to_eol > 0 and dod > 0:
     lifetime_mwh_per_kwh = years_to_eol * fec * dod / 1000.0
     eur_per_mwh_cycle = _PACK_REPLACEMENT_EUR_PER_KWH / max(lifetime_mwh_per_kwh, 1e-6)
+    eur_per_cycle_metric = (
+        _PACK_REPLACEMENT_EUR_PER_KWH * _plant_capacity_mwh * 1000.0
+        / (years_to_eol * fec)
+    )
 else:
     eur_per_mwh_cycle = float("nan")
+    eur_per_cycle_metric = float("nan")
 
 col_a, col_b = st.columns([2, 1])
 with col_a:
@@ -749,6 +726,15 @@ with col_b:
         "€ per MWh throughput",
         f"{eur_per_mwh_cycle:.1f}" if not np.isnan(eur_per_mwh_cycle) else "—",
     )
+    if not np.isnan(eur_per_cycle_metric):
+        _cyc_disp = (
+            f"€{eur_per_cycle_metric/1000:,.1f}k"
+            if eur_per_cycle_metric >= 1000
+            else f"€{eur_per_cycle_metric:,.0f}"
+        )
+    else:
+        _cyc_disp = "—"
+    st.metric(f"€ per cycle ({_plant_capacity_mwh:.0f} MWh plant)", _cyc_disp)
     st.metric("Years to EOL (median cell)",  f"{years_to_eol:.1f}" if not np.isnan(years_to_eol) else "> 20")
     if not (preset.temp_range_C[0] <= temp <= preset.temp_range_C[1]):
         st.warning(f"Temperature outside preset range {preset.temp_range_C}.")
