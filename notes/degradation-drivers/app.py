@@ -77,7 +77,7 @@ st.markdown(
     """
 ### Why years-to-EOL misses lifetime revenue
 
-Here is what the horizon-vs-unit-economics gap looks like in a chart. Three cycling intensities, same cell, same CAPEX. The battery's annual throughput falls with SoH, so the area under each curve is the plant's lifetime MWh delivered — and divided by CAPEX, it's the €/MWh throughput bill.
+Here is what the horizon-vs-unit-economics gap looks like in a chart. Three cycling intensities, same cell, same CAPEX. The battery's annual throughput falls with SoH, so the area under each curve is the plant's lifetime MWh delivered — and CAPEX divided by that area is the €/MWh throughput bill.
 """
 )
 
