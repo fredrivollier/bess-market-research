@@ -146,8 +146,7 @@ for _s in _intro_scenarios:
         text=f"<b style='color:{_s['color']}'>{_s['label']}</b> "
              f"<span style='color:#888;font-size:11px'>{_s['sub']} · {_s['years']:.1f} yr</span><br>"
              f"<span style='color:#444;font-size:12px'>"
-             f"lifetime throughput: <b>{_s['lifetime_mwh']:,.0f} MWh</b><br>"
-             f"<b>€{_s['eur_per_mwh_cost']:,.1f}/MWh throughput</b></span>",
+             f"<b>{_s['lifetime_mwh']:,.0f} MWh · €{_s['eur_per_mwh_cost']:,.1f}/MWh</b> throughput</span>",
         showarrow=False, xanchor="left", yanchor="middle", xshift=14, align="left",
         font=dict(size=13),
     )
