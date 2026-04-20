@@ -57,7 +57,7 @@ data = load_precomputed()
 # ── Intro ────────────────────────────────────────────────────
 st.markdown(
     """
-Most investor-side BESS models reduce degradation to a two-step shortcut: pick a number of cycles per year, multiply by a fade rate, read off the year the battery's capacity drops below the warranty floor (typically 70 %). Cycle count goes in; years-to-end-of-life (years-to-EOL) comes out — and that year is what lands in the warranty schedule and the augmentation plan. One number stands in for "degradation".
+Most investor-side BESS models reduce degradation to a two-step shortcut: pick a number of cycles per year, multiply by a fade rate, and get the year the battery's capacity drops below the warranty floor (typically 70 %). Cycle count goes in; years-to-end-of-life (years-to-EOL) comes out — and that year is what lands in the warranty schedule and the augmentation plan. One number stands in for "degradation".
 
 Both ends of the chain are wrong.
 
