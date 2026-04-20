@@ -466,7 +466,7 @@ The three views aren't substitutes — they answer different questions. **Years-
 
 Three things jump out.
 
-**Rest SoC is the invisible lever.** The battery sits idle most of the day; where it rests decides how fast it ages. Zero extra cycles, zero extra MWh — each year of life rest SoC costs lands straight on the €/MWh bill. An arbitrage battery parked at 85% waiting for the morning peak carries a higher per-MWh cost than an FCR battery resting near 50%. No cycle counter shows it; the chart does.
+**Rest SoC is the invisible lever.** The battery sits idle most of the day; where it rests decides how fast it ages. Zero extra cycles, zero extra MWh — every year of life rest SoC costs lands straight on the €/MWh bill. An arbitrage battery parked at 85% waiting for the morning peak carries a higher per-MWh cost than an FCR battery resting near 50%. No cycle counter shows it; the chart does.
 
 **Cycles per day — not what the counter suggests.** Running the battery harder (2 → 2.5 c/d) lowers the €/MWh bill slightly below baseline; running it lighter (2 → 1 c/d) raises it by ~€10. Calendar aging runs on wall-clock time: a battery that cycles rarely still ages, spreading CAPEX across fewer MWh. Concretely: at 1 c/d the battery lasts a bit longer (~12 years vs 9.8), but delivers half the MWh per year. Fewer lifetime MWh, same CAPEX → higher €/MWh. The industry's headline metric implies gentle is cheaper. It isn't.
 
@@ -676,7 +676,7 @@ with st.expander("Which cell these curves are built on"):
 All response curves, the DoD table, and the interactive above use the
 `baseline_fleet` preset in `lib.models.degradation`. It is **not a real
 cell** — it is a synthetic fleet-average LFP/graphite surrogate, not
-a vendor's datasheet. The
+any vendor's datasheet. The
 kernel form (Wang 2011 cycle × Naumann 2018 calendar, two-channel
 Arrhenius) is pinned to real LFP data; pre-factors are internally
 calibrated. Treat absolute years-to-EOL numbers as illustrative; the
@@ -766,7 +766,7 @@ measures. Three things rule out the common shortcuts:
   over-penalises wear — the formulation that flipped Humiston 2026's
   project to deeply negative.
 - **Flat throughput / €-per-cycle models.** Cheap but blind to rest SoC
-  (no calendar channel) and price cycles uniformly whether fresh
+  (no calendar channel) and price every cycle the same whether fresh
   or tired. Conservative on headline NPV, but cannot rank the levers
   this note is about.
 - **Single-parameter Arrhenius.** One activation energy hides that
@@ -926,7 +926,7 @@ with st.expander("Literature table"):
 st.markdown("---")
 render_closing(
     "Part of an ongoing series on BESS merchant economics. Next: what a trader who "
-    "prices this wear into the bid does differently — and how much revenue a "
+    "prices this wear into every bid does differently — and how much revenue a "
     "warranty-respecting schedule leaves on the table."
 )
 render_footer()
