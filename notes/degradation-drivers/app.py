@@ -48,7 +48,7 @@ apply_theme(show_sidebar=False)
 
 render_header(
     title="What actually drives degradation",
-    kicker="GERMAN BESS | DEGRADATION",
+    kicker="DEGRADATION",
     subtitle="Battery health depends on more than cycle count. Here's the rest of the picture.",
 )
 
@@ -57,13 +57,13 @@ st.markdown(
     """
 Most investor-side BESS models start from the same shortcut: pick a number of cycles per year, multiply by a fade rate, call it degradation. That is how lifetime revenue gets projected, how warranty calls get argued, how augmentation gets sized. The number of cycles is *the* input.
 
-It is the wrong input to anchor on. Two plants that log an identical 730 cycles in a year can land years apart at end of life — one at year 10, the other at year 14 — purely because of what happened *between* those cycles. Where it rested. How warm the room was. How deep each cycle went. Cycle count catches none of it.
+It is the wrong input to anchor on. Two plants that log an identical 730 cycles in a year can land years apart at end of life — one at year 10, the other at year 14 — purely because of what happened *between* those cycles. Where it rested. How warm the cell got. How deep each cycle went. Cycle count catches none of it.
 
 So I rebuilt the model to price these factors explicitly. This note moves each driver — depth of discharge, rest state, how fast it cycles, how many cycles it runs, and how warm it sits — across its full operating range and ranks them by how many years of life each one buys or burns.
 
-€/MWh throughput is the per-MWh "wear bill" a pack runs up over its lifetime. The ranking uses that basis.
+€/MWh throughput is the per-MWh "wear bill" the battery runs up over its lifetime. The ranking uses that basis.
 
-**The short version: temperature and C-rate dominate everything else.** Rest SoC and cycles per day each move the bill by half as much. Depth of discharge barely moves it at all, because the years of life it burns are cancelled almost exactly by the extra MWh per cycle it delivers. Which cell you buy sets the ceiling; how the pack is run decides where you land inside it.
+**The short version: temperature and C-rate dominate everything else.** Rest SoC and cycles per day each move the bill by half as much. Depth of discharge barely moves it at all, because the years of life it burns are cancelled almost exactly by the extra MWh per cycle it delivers. Which cell you buy sets the ceiling; how you run the battery decides where you land inside it.
 """
 )
 
@@ -78,12 +78,12 @@ st.markdown(
 Five parameters set the fade rate of a stationary LFP pack. The trader controls four of them through dispatch; site design fixes the fifth (temperature).
 
 - **Depth of discharge (DoD)** — how far each cycle swings.
-- **Rest SoC** — the state of charge the pack sits at during the ~20 hours a day it isn't actively moving energy.
+- **Rest SoC** — the state of charge the battery sits at during the ~20 hours a day it isn't actively moving energy.
 - **C-rate** — how fast power moves in and out of the battery.
 - **Cycling rate** — full-equivalent cycles per day.
 - **Temperature** — cell-internal average over the year.
 
-Below, each lever moves across its full range while the other four stay at baseline (2 c/d, 80 % DoD, 55 % rest SoC, 0.5C, 25 °C). Toggle the y-axis between **€/MWh throughput** and **years until 70 % SoH** — the ranking shifts between the two views. The dashed horizontal line in each panel marks the baseline value.
+Below, each lever moves across its full range while the other four stay at baseline (2 c/d, 80 % DoD, 55 % rest SoC, 0.5C, 25 °C). Toggle the y-axis between **€/MWh throughput**, **years until 70 % SoH**, and **€ per cycle** (plug in your plant size) — the ranking shifts between the three views. The dashed horizontal line in each panel marks the baseline value.
 """
 )
 
@@ -93,7 +93,7 @@ render_chart_title("How each driver moves the number")
 st.markdown(
     "<div style='color:#6b6b6b;font-size:0.95em;margin-bottom:0.5em'>"
     "Each panel moves one driver across its full operating range, with the other four held at the baseline point (dashed line). "
-    "Toggle the axis between <b>€/MWh throughput</b> and <b>years until 70 % SoH</b>. "
+    "Toggle the axis between <b>€/MWh throughput</b>, <b>years until 70 % SoH</b>, and <b>€ per cycle</b>. "
     "Read it as: <i>\"if average cell temperature rises from 25 °C to 35 °C, the €/MWh bill jumps by ~€38 — and ~5 years of life disappear with it.\"</i>"
     "</div>",
     unsafe_allow_html=True,
@@ -443,25 +443,28 @@ render_chart_caption(
 )
 render_takeaway(
     "Cycle count is a bad proxy for wear. Temperature and C-rate dominate "
-    "€/MWh; rest SoC moves cost without adding cycles; cycling gently doesn't "
-    "make MWh cheaper — calendar aging still runs."
+    "the €/MWh bill. Rest SoC shifts it even while the battery isn't cycling — "
+    "the counter won't show that. And cycling less doesn't scale MWh cheaper: "
+    "calendar aging keeps running whether the battery is working or resting."
 )
 
 st.markdown(
     """
-*How an investor should read the two views: **€/MWh throughput** is the
-objective (unit economics of every MWh the plant delivers); **years to
-EOL** is the constraint (warranty, debt tenor, augmentation timing).*
+*How an investor should read the three views: **€/MWh throughput** is
+the objective (unit economics of every MWh the plant delivers); **years
+to EOL** is the constraint (warranty, debt tenor, augmentation timing);
+**€ per cycle** translates the same picture into the absolute wear bill
+each dispatch decision books against your plant, once you plug in MWh.*
 
 Three things jump out.
 
-**Rest SoC is the invisible lever.** The pack sits idle most of the day; where it rests decides how fast it ages. Zero extra cycles, zero extra MWh — every year of life rest SoC costs lands straight on the €/MWh bill. An arbitrage pack parked at 85% waiting for the morning peak carries a higher per-MWh cost than an FCR pack resting near 50%. No cycle counter shows it; the chart does.
+**Rest SoC is the invisible lever.** The battery sits idle most of the day; where it rests decides how fast it ages. Zero extra cycles, zero extra MWh — every year of life rest SoC costs lands straight on the €/MWh bill. An arbitrage battery parked at 85% waiting for the morning peak carries a higher per-MWh cost than an FCR battery resting near 50%. No cycle counter shows it; the chart does.
 
-**Cycles per day — not what the counter suggests.** Running the pack harder (2 → 2.5 c/d) pushes the €/MWh bill slightly *below* baseline; running it lighter (2 → 1 c/d) pushes it *up* by ~€10. Calendar aging runs on wall-clock time: a pack that cycles rarely still ages, spreading CAPEX across fewer MWh. The industry's headline metric misranks the lever — implying gentle is cheaper when it isn't.
+**Cycles per day — not what the counter suggests.** Running the battery harder (2 → 2.5 c/d) pushes the €/MWh bill slightly *below* baseline; running it lighter (2 → 1 c/d) pushes it *up* by ~€10. Calendar aging runs on wall-clock time: a battery that cycles rarely still ages, spreading CAPEX across fewer MWh. The industry's headline metric misranks the lever — implying gentle is cheaper when it isn't.
 
-**Temperature and C-rate dominate.** Both curves bend sharply: +10 °C or a doubling of C-rate each move the bill by more than rest SoC and cycles/day combined. These are the two levers that decide whether a pack makes its warranty.
+**Temperature and C-rate dominate.** Both curves bend sharply: +10 °C or a doubling of C-rate each move the bill by more than rest SoC and cycles/day combined. These are the two levers that decide whether the battery makes warranty.
 
-Duration doesn't appear as its own panel but hides inside C-rate. A 1h battery discharging a full cycle runs at 1C; a 4h battery at 0.25C. For the same daily dispatch, the short-duration pack sits higher on the C-rate axis, and the C-rate panel is where that shows up. The baseline assumes a 2h pack at 0.5C (typical arbitrage). A 1h pack chasing the same revenue would run at ~1C — landing on the steep part of the curve.
+Duration doesn't appear as its own panel but hides inside C-rate. A 1h battery discharging a full cycle runs at 1C; a 4h battery at 0.25C. For the same daily dispatch, the short-duration battery sits higher on the C-rate axis, and the C-rate panel is where that shows up. The baseline assumes a 2h battery at 0.5C (typical arbitrage). A 1h battery chasing the same revenue would run at ~1C — landing on the steep part of the curve.
 """
 )
 
@@ -471,7 +474,7 @@ st.markdown(
     """
 ### Depth of discharge is a zero-cost lever
 
-Deeper cycles age the pack faster, but each cycle delivers more energy.
+Deeper cycles age the battery faster, but each cycle delivers more energy.
 The two effects cancel. The cell carries a fixed **lifetime-throughput
 budget** (~5.7 MWh/kWh for this preset); DoD decides whether you spend
 it in many shallow cycles or few deep ones.
@@ -505,12 +508,12 @@ st.caption(
 _INTERACTIVE_PRESETS = {
     "Typical arbitrage": {
         "vals": dict(dod=0.80, fec=730, mean_soc=0.55, c_rate=0.50, temp=25),
-        "desc": "Two cycles a day, moderate depth, pack parks near the middle. "
+        "desc": "Two cycles a day, moderate depth, rest SoC near the middle. "
                 "Close to what a well-behaved German arbitrage operator looks like.",
     },
     "Aggressive arbitrage": {
         "vals": dict(dod=0.95, fec=730, mean_soc=0.85, c_rate=0.50, temp=25),
-        "desc": "Day-ahead peak-to-peak: 95% swings, pack parked at 85% "
+        "desc": "Day-ahead peak-to-peak: 95% swings, battery parked at 85% "
                 "overnight. The depth + rest-SoC combination burns years "
                 "off life.",
     },
@@ -652,8 +655,8 @@ st.caption(
     "(single-direction — charging not double-counted). For a 100 MWh plant at baseline, one"
     "80% DoD cycle discharges 80 MWh — wear bill ~€2.4k. "
     "Schimpe 2018 benchmarked ~13 €/MWh at 2018-era CAPEX (~€80/kWh); at today's €180/kWh the "
-    "same arithmetic gives ~€30/MWh. Values well above that signal a pack working itself to "
-    "death faster."
+    "same arithmetic gives ~€30/MWh. Values well above that signal a battery working itself "
+    "to death faster."
 )
 
 # ── Methodology ─────────────────────────────────────────────
@@ -669,14 +672,9 @@ cell** — it is a synthetic fleet-average LFP/graphite surrogate
 describing a typical stationary pack, not any vendor's datasheet. The
 kernel form (Wang 2011 cycle × Naumann 2018 calendar, two-channel
 Arrhenius) is pinned to real LFP data; pre-factors are internally
-calibrated.
-
-Four real-cell presets are also calibrated in `lib.models.degradation`
-— EVE LF280K, CATL EnerC+ 306 Ah, BYD MC Cube-T, Trina Elementa 280 Ah
-— and sit behind revenue/warranty notes elsewhere in the series. Treat
-absolute years-to-EOL numbers as illustrative; the lever ranking —
-temperature and C-rate dominating, DoD nearly flat — reproduces across
-all four real-cell presets.
+calibrated. Treat absolute years-to-EOL numbers as illustrative; the
+lever ranking — temperature and C-rate dominating, DoD nearly flat —
+is what this note is claiming, not the exact coordinates.
 """
     )
 
