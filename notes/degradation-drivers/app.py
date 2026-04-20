@@ -48,7 +48,7 @@ apply_theme(show_sidebar=False)
 
 render_header(
     title="What actually drives degradation",
-    kicker="DEGRADATION",
+    kicker="DEGRADATION | COST OF CYCLE",
     subtitle="Battery health depends on more than cycle count. Here's the rest of the picture.",
 )
 
