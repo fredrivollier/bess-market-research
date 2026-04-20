@@ -55,11 +55,11 @@ render_header(
 # ── Intro ────────────────────────────────────────────────────
 st.markdown(
     """
-Most investor-side BESS models start from the same shortcut: pick a number of cycles per year, multiply by a fade rate, call it degradation. That is how lifetime revenue gets projected, how warranty calls get argued, how augmentation gets sized. The number of cycles is *the* input.
+Most investor-side BESS models start from a shortcut: pick a number of cycles per year, multiply by a fade rate, call it degradation. That is how lifetime revenue gets projected, how warranty calls get argued, how augmentation gets sized. The number of cycles is *the* input.
 
-It is the wrong input to anchor on. Two plants that log an identical 730 cycles in a year can land years apart at end of life — one at year 10, the other at year 14 — purely because of what happened *between* those cycles. Where it rested. How warm the cell got. How deep each cycle went. Cycle count catches none of it.
+It is the wrong input. Two plants that log an identical 730 cycles in a year can land years apart at end of life — one at year 10, the other at year 14 — purely because of what happened *between* those cycles. Where it rested. How warm the cell got. How deep each cycle went. Cycle count catches none of it.
 
-So I rebuilt the model to price these factors explicitly. This note moves each driver — depth of discharge, rest state, how fast it cycles, how many cycles it runs, and how warm it sits — across its full operating range and ranks them by how many years of life each one buys or burns.
+I rebuilt the model to price these factors explicitly. This note moves each driver — depth of discharge, rest state, how fast it cycles, how many cycles it runs, and how warm it sits — across its full operating range and ranks them by how many years of life each one buys or burns.
 
 €/MWh throughput is the per-MWh "wear bill" the battery runs up over its lifetime. The ranking uses that basis.
 
@@ -77,13 +77,13 @@ st.markdown(
 
 Five parameters set the fade rate of a stationary LFP pack. The trader controls four of them through dispatch; site design fixes the fifth (temperature).
 
-- **Depth of discharge (DoD)** — how far each cycle swings.
+- **Depth of discharge (DoD)** — how far each cycle moves.
 - **Rest SoC** — the state of charge the battery sits at during the ~20 hours a day it isn't actively moving energy.
 - **C-rate** — how fast power moves in and out of the battery.
 - **Cycling rate** — full-equivalent cycles per day.
 - **Temperature** — cell-internal average over the year.
 
-Below, each lever moves across its full range while the other four stay at baseline (2 c/d, 80 % DoD, 55 % rest SoC, 0.5C, 25 °C). Toggle the y-axis between **€/MWh throughput**, **years until 70 % SoH**, and **€ per cycle** (plug in your plant size) — the ranking shifts between the three views. The dashed horizontal line in each panel marks the baseline value.
+Below, each lever varies across its full range while the other four stay at baseline (2 c/d, 80 % DoD, 55 % rest SoC, 0.5C, 25 °C). Switch the y-axis between **€/MWh throughput**, **years until 70 % SoH**, and **€ per cycle** (plug in your plant size) — the lever ranking changes depending on which view you select. The dashed horizontal line in each panel marks the baseline value.
 """
 )
 
@@ -92,8 +92,8 @@ st.markdown("---")
 render_chart_title("How each driver moves the number")
 st.markdown(
     "<div style='color:#6b6b6b;font-size:0.95em;margin-bottom:0.5em'>"
-    "Each panel moves one driver across its full operating range, with the other four held at the baseline point (dashed line). "
-    "Toggle the axis between <b>€/MWh throughput</b>, <b>years until 70 % SoH</b>, and <b>€ per cycle</b>. "
+    "Each panel varies one driver across its full operating range, with the other four held at the baseline point (dashed line). "
+    "Switch the axis between <b>€/MWh throughput</b>, <b>years until 70 % SoH</b>, and <b>€ per cycle</b>. "
     "Read it as: <i>\"if average cell temperature rises from 25 °C to 35 °C, the €/MWh bill jumps by ~€38 — and ~5 years of life disappear with it.\"</i>"
     "</div>",
     unsafe_allow_html=True,
@@ -450,21 +450,29 @@ render_takeaway(
 
 st.markdown(
     """
-*How an investor should read the three views: **€/MWh throughput** is
-the objective (unit economics of every MWh the plant delivers); **years
-to EOL** is the constraint (warranty, debt tenor, augmentation timing);
-**€ per cycle** translates the same picture into the absolute wear bill
-each dispatch decision books against your plant, once you plug in MWh.*
+### Why €/MWh throughput, not years-to-EOL
+
+The industry runs on years-to-EOL. It sits in the warranty schedule, the IC memo, the augmentation plan — the single number the market treats as "degradation". But years-to-EOL answers a horizon question — *when does the battery hit its warranty floor?* — not a unit-economics question — *what does each MWh this plant sells actually cost me in wear?* These aren't the same question, and they don't rank levers the same way.
+
+Years-to-EOL confounds two things: how much wear the plant books per MWh, and how many MWh the plant actually delivers. The cycles-per-day panel above is the cleanest demo. Running at 1 c/d instead of 2 stretches years-to-EOL to ~12 years, but halves lifetime MWh — the same CAPEX divides across half the revenue, and €/MWh rises by ~€10. Years-to-EOL says gentle duty is healthier. €/MWh says each MWh sold carries a higher wear charge. Only the second is a number a trader can bid against.
+
+Rest SoC sharpens the split. Parking at 85% instead of 50% burns years off EOL without adding a single cycle or a single MWh of lifetime throughput. The years-to-EOL chart flags it as expensive. The €/MWh chart prices it — a straight CAPEX-per-MWh hit, the same MWh divided by fewer years.
+
+The three views aren't substitutes — they answer different questions. **Years-to-EOL** is the constraint: it sets the warranty call, the debt tenor, the augmentation schedule. **€/MWh throughput** is the objective: the unit economics of plant output, the basis against which dispatch decisions have to price. **€ per cycle** scales the same picture to your plant — the absolute wear bill per cycle, once you plug in MWh. For the question a dispatch implicitly asks — *is this cycle worth the wear?* — €/MWh is the unit; years-to-EOL is the ceiling.
+
+---
+
+### What the panels say
 
 Three things jump out.
 
-**Rest SoC is the invisible lever.** The battery sits idle most of the day; where it rests decides how fast it ages. Zero extra cycles, zero extra MWh — every year of life rest SoC costs lands straight on the €/MWh bill. An arbitrage battery parked at 85% waiting for the morning peak carries a higher per-MWh cost than an FCR battery resting near 50%. No cycle counter shows it; the chart does.
+**Rest SoC is the invisible lever.** The battery sits idle most of the day; where it rests decides how fast it ages. Zero extra cycles, zero extra MWh — each year of life rest SoC costs lands straight on the €/MWh bill. An arbitrage battery parked at 85% waiting for the morning peak carries a higher per-MWh cost than an FCR battery resting near 50%. No cycle counter shows it; the chart does.
 
-**Cycles per day — not what the counter suggests.** Running the battery harder (2 → 2.5 c/d) pushes the €/MWh bill slightly *below* baseline; running it lighter (2 → 1 c/d) pushes it *up* by ~€10. Calendar aging runs on wall-clock time: a battery that cycles rarely still ages, spreading CAPEX across fewer MWh. Concretely: at 1 c/d the battery lasts a bit longer (~12 years vs 9.8), but delivers half the MWh per year. Fewer lifetime MWh, same CAPEX → higher €/MWh. The industry's headline metric misranks the lever — implying gentle is cheaper when it isn't.
+**Cycles per day — not what the counter suggests.** Running the battery harder (2 → 2.5 c/d) lowers the €/MWh bill slightly below baseline; running it lighter (2 → 1 c/d) raises it by ~€10. Calendar aging runs on wall-clock time: a battery that cycles rarely still ages, spreading CAPEX across fewer MWh. Concretely: at 1 c/d the battery lasts a bit longer (~12 years vs 9.8), but delivers half the MWh per year. Fewer lifetime MWh, same CAPEX → higher €/MWh. The industry's headline metric implies gentle is cheaper. It isn't.
 
 **Temperature and C-rate dominate.** Both curves bend sharply: +10 °C or a doubling of C-rate each move the bill by more than rest SoC and cycles/day combined. These are the two levers that decide whether the battery makes warranty.
 
-Duration doesn't appear as its own panel but hides inside C-rate. A 1h battery discharging a full cycle runs at 1C; a 4h battery at 0.25C. For the same daily dispatch, the short-duration battery sits higher on the C-rate axis, and the C-rate panel is where that shows up. The baseline assumes a 2h battery at 0.5C (typical arbitrage). A 1h battery chasing the same revenue would run at ~1C — landing on the steep part of the curve.
+Duration doesn't appear as its own panel — it sits inside C-rate. A 1h battery discharging a full cycle runs at 1C; a 4h battery at 0.25C. For the same daily dispatch, the short-duration battery sits higher on the C-rate axis, and the C-rate panel is where that shows up. The baseline assumes a 2h battery at 0.5C (typical arbitrage). A 1h battery chasing the same revenue would run at ~1C — landing on the steep part of the curve.
 """
 )
 
@@ -474,17 +482,16 @@ st.markdown(
     """
 ### Depth of discharge is a zero-cost lever
 
-Deeper cycles age the battery faster, but each cycle delivers more energy.
-The two effects cancel. The cell carries a fixed **lifetime-throughput
+Deeper cycles age the battery faster, but each cycle delivers more energy — the two effects cancel. The cell carries a fixed **lifetime-throughput
 budget** (~5.7 MWh/kWh for this preset); DoD decides whether you spend
 it in many shallow cycles or few deep ones.
 
 That's why the €/MWh curve is nearly flat: cycling at 50% or 95% DoD
 costs about the same per MWh. Many dispatch optimisers treat DoD as
 **the** cost-of-cycling parameter: deeper = faster fade = more
-expensive. Within the LFP operating window, that framing is wrong.
+expensive. Within the LFP operating window, that framing does not hold.
 
-This is the Ah-throughput picture of LFP — physics and citations in the
+This is the Ah-throughput model of LFP degradation — physics and citations in the
 methodology below. The pattern is LFP-shaped: NMC behaves differently,
 and even LFP bends above ~95 % DoD.
 
@@ -502,25 +509,25 @@ answers — not on cost-per-MWh.
 st.markdown("---")
 st.markdown("## Build your own schedule")
 st.caption(
-    "Pick a preset to reproduce a finding from the note, then swing the sliders to stress-test it."
+    "Pick a preset to reproduce a finding from the note, then move the sliders to stress-test it."
 )
 
 _INTERACTIVE_PRESETS = {
     "Typical arbitrage": {
         "vals": dict(dod=0.80, fec=730, mean_soc=0.55, c_rate=0.50, temp=25),
-        "desc": "Two cycles a day, moderate depth, rest SoC near the middle. "
-                "Close to what a well-behaved German arbitrage operator looks like.",
+        "desc": "Two cycles a day, moderate depth, rest SoC near the middle — "
+                "close to a well-behaved German arbitrage schedule.",
     },
     "Aggressive arbitrage": {
         "vals": dict(dod=0.95, fec=730, mean_soc=0.85, c_rate=0.50, temp=25),
-        "desc": "Day-ahead peak-to-peak: 95% swings, battery parked at 85% "
+        "desc": "Day-ahead peak-to-peak: 95% DoD, battery parked at 85% SoC "
                 "overnight. The depth + rest-SoC combination burns years "
                 "off life.",
     },
     "FCR-heavy": {
         "vals": dict(dod=0.55, fec=1095, mean_soc=0.50, c_rate=0.25, temp=25),
         "desc": "50% more cycles per year than arbitrage — but shallow, slow, and "
-                "resting at midpoint. Many cycles, little fade: the counter "
+                "resting at midpoint. Many cycles, little fade. The cycle counter "
                 "overstates the wear.",
     },
     "Texas summer": {
@@ -531,7 +538,7 @@ _INTERACTIVE_PRESETS = {
     },
     "Gentle": {
         "vals": dict(dod=0.60, fec=730, mean_soc=0.50, c_rate=0.30, temp=25),
-        "desc": "What a warranty-preserving trader looks like: shallow cycles, "
+        "desc": "A warranty-preserving schedule: shallow cycles, "
                 "mid-point rest SoC, slow C-rate, cool cell.",
     },
 }
@@ -668,8 +675,8 @@ with st.expander("Which cell these curves are built on"):
         """
 All response curves, the DoD table, and the interactive above use the
 `baseline_fleet` preset in `lib.models.degradation`. It is **not a real
-cell** — it is a synthetic fleet-average LFP/graphite surrogate
-describing a typical stationary pack, not any vendor's datasheet. The
+cell** — it is a synthetic fleet-average LFP/graphite surrogate, not
+a vendor's datasheet. The
 kernel form (Wang 2011 cycle × Naumann 2018 calendar, two-channel
 Arrhenius) is pinned to real LFP data; pre-factors are internally
 calibrated. Treat absolute years-to-EOL numbers as illustrative; the
@@ -689,7 +696,7 @@ with st.expander("Where this model stops working"):
   power-law breaks down — independently confirmed on Stanford Lam 2024
   K2 cells — so the calendar channel should not be trusted beyond
   ~50 °C. Cold end sparsely sampled; use with care below 15 °C.
-- **Temperature — cell-internal vs ambient.** The Arrhenius terms
+- **Temperature: cell-internal vs ambient.** The Arrhenius terms
   consume cell-internal temperature, not ambient.
   `project_capacity_detailed` takes cell-internal T directly (the
   default, used throughout this note);
@@ -713,21 +720,18 @@ with st.expander("Where this model stops working"):
   ages *slower* than the mean-C prediction (model over-estimates loss);
   high-amplitude pulses age *faster* (model under-estimates). For
   aFRR/FCR duty with peak/mean ≳ 3, treat SoH forecasts here as
-  slightly optimistic. Calibrating this out needs a time-series
-  C-rate input and, honestly, more than the n = 2 LFP cells publicly
-  available today.
+  slightly optimistic. Calibrating this out needs time-series
+  C-rate input and more than the two public LFP datasets available today.
 - **SoC representation.** Bucketed hours per year — transition
   dynamics, partial cycles, and calendar/cycle coupling inside a cycle
   are not modelled. For stationary LFP the bucketing approximation
   holds; it will need revisiting when NMC enters.
-- **Knee point.** LFP cells fade gently for most of their life — a slow, near-linear slope driven by lithium-inventory loss (LLI): lithium gets pinned into the solid-electrolyte interphase and lost to cycling. Past ~70% SoH, a second mechanism kicks in: active material begins to detach (LAM), and fade accelerates sharply — the "knee". The model stops at 70% SoH — upstream of the knee. Second-life modelling would need a knee-aware kernel.
+- **Knee point.** LFP cells fade gently for most of their life — a slow, near-linear slope driven by lithium-inventory loss (LLI), where lithium gets trapped in the solid-electrolyte interphase. Past ~70% SoH, a second mechanism kicks in: active material begins to detach (LAM), and fade accelerates sharply — the "knee". The model stops at 70% SoH — upstream of the knee. Second-life modelling would need a knee-aware kernel.
 - **Pack effects.** Cell-to-cell spread is parametric (Severson 2019
-  CoV 8%, split across cycle and calendar channels, combined in
-  quadrature). Thermal gradients and string-level imbalance aren't
-  modelled from pack topology; field data anchors the span — pack fade
-  runs ~10–20% faster than best-cell fade (Schimpe 2018; Reniers 2019).
-  The operator lever is monitoring discipline, not BMS spec.
-  Use `return_kind="min"` on the Monte
+  CoV 8%, split across channels, combined in quadrature). Thermal
+  gradients and string-level imbalance aren't modelled; field data
+  anchors the span — pack fade runs ~10–20% faster than best-cell fade
+  (Schimpe 2018; Reniers 2019). Use `return_kind="min"` on the Monte
   Carlo projection for warranty/insurance floors.
 - **Field validation beyond calibration cells.** SNL Preger 2020
   (30 A123 18650 cells, cycling) and Stanford Lam 2024 (80 K2 Energy
@@ -739,7 +743,7 @@ with st.expander("Where this model stops working"):
 """
     )
 
-with st.expander("Why this kernel — the model-choice problem"):
+with st.expander("Why this kernel"):
     st.markdown(
         """
 [Humiston, Cetin, de Queiroz (Energies 2026)](https://www.mdpi.com/1996-1073/19/4/1056) ran the same BESS project
@@ -747,22 +751,22 @@ through three degradation formulations — linear-calendar (LC),
 energy-throughput (ET), and cycle-based rainflow (CB) — on 2024 ERCOT
 data. LC and ET both returned modest annual capacity loss (~2 %) and
 left the project profitable; CB rainflow predicted substantially
-heavier degradation and flipped the valuation deeply negative. Not
-dispatch strategy. Not chemistry. The **model the analyst chose**
-decided whether the asset looked like a good deal. The same sensitivity
+heavier degradation and flipped the valuation deeply negative. The
+**model the analyst chose** — not dispatch, not chemistry — decided
+whether the asset looked profitable. The same sensitivity
 shows up at our parameter scale: swinging the cycle pre-factor `k_cyc`
 by ±20 % moves lifetime NPV by a magnitude comparable to picking one
 chemistry over another.
 
-A ranking model must be tighter than the choices it ranks. Three
-things rule out the common shortcuts:
+A model that ranks levers must be more precise than the differences it
+measures. Three things rule out the common shortcuts:
 
 - **Rainflow-only.** Captures cycle depth but attributes all fade to
   cycling without a calendar channel. Under arbitrage-like duty this
   over-penalises wear — the formulation that flipped Humiston 2026's
   project to deeply negative.
 - **Flat throughput / €-per-cycle models.** Cheap but blind to rest SoC
-  (no calendar channel) and price every cycle the same whether fresh
+  (no calendar channel) and price cycles uniformly whether fresh
   or tired. Conservative on headline NPV, but cannot rank the levers
   this note is about.
 - **Single-parameter Arrhenius.** One activation energy hides that
@@ -785,7 +789,7 @@ Both disclose bias at their physics edges rather than blocking release.
 """
     )
 
-with st.expander("Why DoD is a zero-cost lever — the Ah-throughput picture"):
+with st.expander("Why DoD is a zero-cost lever"):
     st.markdown(
         """
 This is the **Ah-throughput** (or **throughput-limited-aging**)
@@ -811,7 +815,7 @@ multiplied by an empirical super-linear DoD term from
 effectively `Q_cyc ∝ FEC · DoD^1.5` at constant temperature and
 C-rate. **Taken alone this would make deeper cycles more than proportionally
 damaging — the opposite of the flat €/MWh curve.**
-The flat €/MWh curve emerges from interplay with the calendar channel:
+The flat €/MWh curve emerges from interaction with the calendar channel:
 calendar fade is DoD-independent, so a pack that cycles deeper reaches
 EOL sooner — before the calendar term accumulates as much loss. Years-
 to-EOL shrinks roughly as 1/DoD, and `years × FEC × DoD` ≈ constant
@@ -821,7 +825,7 @@ falls out of two-channel balance, not a single α < 1 on cycling.
 temperature with baseline calendar/cycle split. Above ~95 % DoD the
 stress function bends super-linearly; past the knee (below 70 % SoH) a
 different mechanism takes over. For cycle-dominated duty (hot cell,
-high FEC) the super-linear DoD term shows through — deeper cycles cost
+high FEC), the super-linear DoD term dominates — deeper cycles cost
 more per MWh. The pattern is LFP- and window-specific, not universal.
 """
     )
@@ -922,7 +926,7 @@ with st.expander("Literature table"):
 st.markdown("---")
 render_closing(
     "Part of an ongoing series on BESS merchant economics. Next: what a trader who "
-    "prices this wear into every bid does differently — and how much revenue a "
+    "prices this wear into the bid does differently — and how much revenue a "
     "warranty-respecting schedule leaves on the table."
 )
 render_footer()
