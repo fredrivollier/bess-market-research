@@ -52,6 +52,8 @@ render_header(
     subtitle="Battery health depends on more than cycle count. Here's the rest of the picture.",
 )
 
+data = load_precomputed()
+
 # ── Intro ────────────────────────────────────────────────────
 st.markdown(
     """
@@ -67,7 +69,124 @@ I rebuilt the model to price these factors explicitly. This note moves each driv
 """
 )
 
-data = load_precomputed()
+# ── Why €/MWh, not years-to-EOL ─────────────────────────────
+st.markdown("---")
+st.markdown(
+    """
+### Why €/MWh throughput, not years-to-EOL
+
+The industry runs on years-to-EOL. It sits in the warranty schedule, the IC memo, the augmentation plan — the single number the market treats as "degradation". But years-to-EOL answers a horizon question — *when does the battery hit its warranty floor?* — not a unit-economics question — *what does each MWh sold actually cost me in wear?* These aren't the same question, and they don't rank operator choices the same way.
+
+Look at what happens when you rank three cycling intensities by each metric.
+"""
+)
+
+# Slope chart: three cycles-per-day scenarios ranked by both metrics.
+# Uses the cycles-per-day sweep already in precomputed data.
+_fec_driver = next(d for d in data["response_curves"]["drivers"] if d["key"] == "fec")
+_fec_xy = [(p["x"], p["years"]) for p in _fec_driver["years_to_70_mid"] if p["years"] is not None]
+_fec_xs_intro = [p[0] for p in _fec_xy]
+_fec_ys_intro = [p[1] for p in _fec_xy]
+
+_CAPEX_EUR_PER_KWH_INTRO = 180.0
+
+
+def _years_at_fec(fec_val: float) -> float:
+    return float(np.interp(fec_val, _fec_xs_intro, _fec_ys_intro))
+
+
+def _cost_at_fec(fec_val: float) -> float:
+    y = _years_at_fec(fec_val)
+    return _CAPEX_EUR_PER_KWH_INTRO * 1000.0 / (y * fec_val * 0.80)
+
+
+_cross_scenarios = [
+    {"label": "Light duty",  "sub": "1 c/d",   "fec": 365.0, "color": "#d35f5f"},
+    {"label": "Baseline",    "sub": "2 c/d",   "fec": 730.0, "color": "#0b5fff"},
+    {"label": "Hard duty",   "sub": "2.5 c/d", "fec": 913.0, "color": "#1aa179"},
+]
+for _s in _cross_scenarios:
+    _s["years"] = _years_at_fec(_s["fec"])
+    _s["cost"]  = _cost_at_fec(_s["fec"])
+
+_by_years = sorted(_cross_scenarios, key=lambda s: -s["years"])  # longer first
+_by_cost  = sorted(_cross_scenarios, key=lambda s: s["cost"])    # cheaper first
+_rank_y = {s["label"]: _by_years.index(s) for s in _cross_scenarios}
+_rank_c = {s["label"]: _by_cost.index(s) for s in _cross_scenarios}
+
+fig_cross = go.Figure()
+
+fig_cross.add_annotation(
+    x=0.0, y=0.75, xref="x", yref="y",
+    text="<b>Ranked by years to 70% SoH</b><br>"
+         "<span style='color:#888;font-size:11px'>longer = better</span>",
+    showarrow=False, xanchor="center", align="center",
+    font=dict(size=13, color="#222"),
+)
+fig_cross.add_annotation(
+    x=1.0, y=0.75, xref="x", yref="y",
+    text="<b>Ranked by €/MWh throughput</b><br>"
+         "<span style='color:#888;font-size:11px'>lower = better</span>",
+    showarrow=False, xanchor="center", align="center",
+    font=dict(size=13, color="#222"),
+)
+
+for _rank_idx in range(len(_cross_scenarios)):
+    fig_cross.add_annotation(
+        x=0.5, y=-_rank_idx, xref="x", yref="y",
+        text=f"#{_rank_idx + 1}",
+        showarrow=False, font=dict(size=11, color="#bbb"),
+    )
+
+for _s in _cross_scenarios:
+    _yr = -_rank_y[_s["label"]]
+    _cr = -_rank_c[_s["label"]]
+    fig_cross.add_trace(
+        go.Scatter(
+            x=[0.0, 1.0], y=[_yr, _cr],
+            mode="lines+markers",
+            line=dict(color=_s["color"], width=3, shape="spline"),
+            marker=dict(size=13, color=_s["color"]),
+            hoverinfo="skip", showlegend=False,
+        )
+    )
+    fig_cross.add_annotation(
+        x=-0.04, y=_yr, xref="x", yref="y",
+        text=f"<b>{_s['label']}</b> <span style='color:#888'>({_s['sub']})</span><br>"
+             f"<span style='color:#555;font-size:12px'>{_s['years']:.1f} years</span>",
+        showarrow=False, xanchor="right", align="right",
+        font=dict(size=13, color=_s["color"]),
+    )
+    fig_cross.add_annotation(
+        x=1.04, y=_cr, xref="x", yref="y",
+        text=f"<b>{_s['label']}</b> <span style='color:#888'>({_s['sub']})</span><br>"
+             f"<span style='color:#555;font-size:12px'>€{_s['cost']:.0f}/MWh</span>",
+        showarrow=False, xanchor="left", align="left",
+        font=dict(size=13, color=_s["color"]),
+    )
+
+fig_cross.update_xaxes(range=[-0.7, 1.7], visible=False)
+fig_cross.update_yaxes(
+    range=[-(len(_cross_scenarios) - 1) - 0.5, 1.2], visible=False,
+)
+fig_cross.update_layout(
+    height=280,
+    margin=dict(l=10, r=10, t=10, b=10),
+    plot_bgcolor="rgba(0,0,0,0)",
+    paper_bgcolor="rgba(0,0,0,0)",
+    showlegend=False,
+)
+st.plotly_chart(fig_cross, use_container_width=True, config={"displayModeBar": False})
+
+st.markdown(
+    """
+The rankings invert. Light duty wins on years-to-EOL and loses on €/MWh. Hard duty does the opposite. A cycle counter or a years-to-EOL chart looking at these three would tell you to run gently; a €/MWh chart tells you the gentle plant is the most expensive per MWh it sells.
+
+Years-to-EOL confounds two things: how much wear each MWh carries, and how many MWh the plant actually delivers. Light duty stretches the calendar budget but doesn't stretch the throughput budget — fewer cycles means fewer MWh to absorb the same CAPEX. Same cost, less output, higher €/MWh.
+
+Both views have their place. **Years-to-EOL** is the *constraint* — warranty, debt tenor, augmentation timing. **€/MWh throughput** is the *objective* — unit economics of plant output, the basis a dispatch decision has to price against. **€ per cycle** scales the same picture to plant size. Years-to-EOL tells you when to worry; €/MWh tells you what to bid.
+"""
+)
 
 # ── The levers ──────────────────────────────────────────────
 st.markdown("---")
@@ -450,20 +569,6 @@ render_takeaway(
 
 st.markdown(
     """
-### Why €/MWh throughput, not years-to-EOL
-
-The industry runs on years-to-EOL. It sits in the warranty schedule, the IC memo, the augmentation plan — the single number the market treats as "degradation". But years-to-EOL answers a horizon question — *when does the battery hit its warranty floor?* — not a unit-economics question — *what does each MWh this plant sells actually cost me in wear?* These aren't the same question, and they don't rank levers the same way.
-
-Years-to-EOL confounds two things: how much wear the plant books per MWh, and how many MWh the plant actually delivers. The cycles-per-day panel above is the cleanest demo. Running at 1 c/d instead of 2 stretches years-to-EOL to ~12 years, but halves lifetime MWh — the same CAPEX divides across half the revenue, and €/MWh rises by ~€10. Years-to-EOL says gentle duty is healthier. €/MWh says each MWh sold carries a higher wear charge. Only the second is a number a trader can bid against.
-
-Rest SoC sharpens the split. Parking at 85% instead of 50% burns years off EOL without adding a single cycle or a single MWh of lifetime throughput. The years-to-EOL chart flags it as expensive. The €/MWh chart prices it — a straight CAPEX-per-MWh hit, the same MWh divided by fewer years.
-
-The three views aren't substitutes — they answer different questions. **Years-to-EOL** is the constraint: it sets the warranty call, the debt tenor, the augmentation schedule. **€/MWh throughput** is the objective: the unit economics of plant output, the basis against which dispatch decisions have to price. **€ per cycle** scales the same picture to your plant — the absolute wear bill per cycle, once you plug in MWh. For the question a dispatch implicitly asks — *is this cycle worth the wear?* — €/MWh is the unit; years-to-EOL is the ceiling.
-
----
-
-### What the panels say
-
 Three things jump out.
 
 **Rest SoC is the invisible lever.** The battery sits idle most of the day; where it rests decides how fast it ages. Zero extra cycles, zero extra MWh — every year of life rest SoC costs lands straight on the €/MWh bill. An arbitrage battery parked at 85% waiting for the morning peak carries a higher per-MWh cost than an FCR battery resting near 50%. No cycle counter shows it; the chart does.
