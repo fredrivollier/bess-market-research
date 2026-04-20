@@ -179,9 +179,9 @@ st.caption(
 
 st.markdown(
     """
-The rankings invert. Light duty lasts longest — and delivers the fewest lifetime MWh. Hard duty lasts shortest — and delivers the most. A years-to-EOL chart would rank these three gentle → hard; a €/MWh throughput chart ranks them hard → gentle. A cycle counter or a warranty memo looking at these three would tell you to run gently; the €/MWh column says the gentle plant is the most expensive per MWh it sells.
+Read the chart as three lifetime budgets, not three calendars. Light duty's battery survives the longest — 15 years vs Hard duty's 8.5 — and over those 6.5 extra years it still delivers ~1,500 MWh *less* energy per MWh of installed capacity (3,670 vs 5,202). Same cell, same CAPEX, different dispatch intensity. The longer-lived plant amortises its CAPEX at ~€55/MWh; the shorter-lived one, at ~€38/MWh. Running gently doesn't save the battery money — it stretches the bill across fewer MWh.
 
-Years-to-EOL confounds two things: how fast each MWh wears the battery, and how many MWh the plant actually delivers. Light duty stretches the calendar budget but doesn't stretch the throughput budget — fewer cycles means fewer MWh to absorb the same CAPEX. Same cost, less output, higher €/MWh.
+The move from Hard → Light adds 6.5 years and subtracts revenue. That's the confound years-to-EOL carries: it mixes *how fast each MWh wears the battery* with *how many MWh the plant actually delivers*, and the second effect dominates here. Fewer cycles × more calendar time means fewer MWh to absorb the same CAPEX, so the gentle plant is the most expensive per MWh it sells.
 
 Both views have their place. **Years-to-EOL** is the *constraint* — warranty, debt tenor, augmentation timing. **€/MWh throughput** is the *objective* — unit economics of plant output, the basis a dispatch decision has to price against. **€ per cycle** scales the same picture to plant size. Years-to-EOL tells you when to worry; €/MWh tells you what to bid.
 """
@@ -193,7 +193,7 @@ st.markdown(
     """
 ### The five levers
 
-Five parameters set the fade rate of a stationary LFP pack. The trader controls four of them through dispatch; site design fixes the fifth (temperature).
+Five parameters set the fade rate of a stationary LFP battery. The trader controls four of them through dispatch; site design fixes the fifth (temperature).
 
 - **Depth of discharge (DoD)** — how far each cycle moves.
 - **Rest SoC** — the state of charge the battery sits at during the ~20 hours a day it isn't actively moving energy.
