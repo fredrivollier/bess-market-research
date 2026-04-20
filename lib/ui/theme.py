@@ -152,6 +152,33 @@ _COMPONENTS = """
     line-height: 1.45;
     margin: 1rem 0 0.75rem 0;
 }
+
+/* Override Streamlit's default red primary-widget colour (used on Cloud,
+   where .streamlit/config.toml isn't deployed). Teal-green to match the
+   accent-2 token and the Plotly chart accents. */
+.stButton > button[kind="primary"],
+button[data-testid="baseButton-primary"] {
+    background-color: var(--accent-2) !important;
+    border-color: var(--accent-2) !important;
+    color: #ffffff !important;
+}
+.stButton > button[kind="primary"]:hover,
+button[data-testid="baseButton-primary"]:hover {
+    background-color: #228578 !important;
+    border-color: #228578 !important;
+}
+[data-testid="stSlider"] [data-baseweb="slider"] > div > div:nth-child(1) > div {
+    background-color: var(--accent-2) !important;
+}
+[data-testid="stSlider"] [role="slider"] {
+    background-color: var(--accent-2) !important;
+    border-color: var(--accent-2) !important;
+}
+[data-testid="stSlider"] [data-testid="stTickBarMin"],
+[data-testid="stSlider"] [data-testid="stTickBarMax"],
+[data-testid="stSlider"] div[data-testid="stThumbValue"] {
+    color: var(--accent-2) !important;
+}
 """
 
 _SIDEBAR_COMPACT = """
