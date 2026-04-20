@@ -651,11 +651,11 @@ with col_b:
         st.warning("C-rate above calibration range (>2C).")
 
 st.caption(
-    "€/MWh throughput = replacement cost (≈180 €/kWh) divided across lifetime discharge MWh "
+    "€/MWh throughput = replacement cost (\\~180 €/kWh) divided across lifetime discharge MWh "
     "(single-direction — charging not double-counted). For a 100 MWh plant at baseline, one "
-    "80% DoD cycle discharges 80 MWh — wear bill ≈€2.4k. "
-    "Schimpe 2018 benchmarked ≈13 €/MWh at 2018-era CAPEX (≈€80/kWh); at today's €180/kWh the "
-    "same arithmetic gives ≈€30/MWh. Values well above that signal a battery working itself "
+    "80% DoD cycle discharges 80 MWh — wear bill \\~€2.4k. "
+    "Schimpe 2018 benchmarked \\~13 €/MWh at 2018-era CAPEX (\\~€80/kWh); at today's €180/kWh the "
+    "same arithmetic gives \\~€30/MWh. Values well above that signal a battery working itself "
     "to death faster."
 )
 
