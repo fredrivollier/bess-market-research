@@ -736,7 +736,7 @@ with col_b:
     st.metric("Years to EOL (median cell)",  f"{years_to_eol:.1f}" if not np.isnan(years_to_eol) else "> 20")
     st.metric(
         "€ per MWh wear",
-        f"{eur_per_mwh_cycle:.1f}" if not np.isnan(eur_per_mwh_cycle) else "—",
+        f"€{eur_per_mwh_cycle:.1f}" if not np.isnan(eur_per_mwh_cycle) else "—",
     )
     if not np.isnan(eur_per_cycle_metric):
         _cyc_disp = (
