@@ -783,6 +783,13 @@ with st.expander("Where this model stops working"):
 - **Chemistry.** NMC has a different calendar-aging shape (stronger
   SoC dependence, lower Ea) and needs a separate kernel — not in scope
   here.
+- **Capacity only, not resistance.** The kernel tracks Qloss (lithium-
+  inventory fade), not internal-resistance growth. €/MWh wear counts
+  CAPEX per MWh of throughput; it doesn't charge the rising-R penalty
+  that shows up as lower round-trip efficiency and higher HVAC
+  auxiliary draw. Both scale with cycling intensity and cell
+  temperature — so adding them in would push the lever ranking further
+  against hot, fast, and deep operation, not flatten it.
 - **Temperature — calibration window.** 15–60 °C calibrated (Wang 2011
   + Naumann 2018 coverage). At the 60 °C edge the Naumann Arrhenius
   power-law breaks down — independently confirmed on Stanford Lam 2024
