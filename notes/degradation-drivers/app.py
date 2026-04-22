@@ -621,167 +621,172 @@ def _apply_preset(name: str) -> None:
         st.session_state[f"ddr_{k}"] = v
     st.session_state["ddr_preset"] = name
 
-_active_preset = st.session_state.get("ddr_preset", _DEFAULT_PRESET)
+@st.fragment
+def _interactive_block() -> None:
+    _active_preset = st.session_state.get("ddr_preset", _DEFAULT_PRESET)
 
-preset_cols = st.columns(len(_INTERACTIVE_PRESETS))
-for pc, name in zip(preset_cols, _INTERACTIVE_PRESETS.keys()):
-    pc.button(
-        name, on_click=_apply_preset, args=(name,),
-        use_container_width=True,
-        type="primary" if name == _active_preset else "secondary",
-    )
-st.markdown(
-    f"<div style='display:flex;gap:0.5em;align-items:baseline;"
-    f"margin:0.3em 0.2em 0.8em 0.2em;max-width:1000px;font-size:0.9em'>"
-    f"<span style='color:#1aa179;font-weight:700;flex-shrink:0'>"
-    f"{_active_preset} →</span>"
-    f"<span style='color:#444;text-wrap:pretty'>{_INTERACTIVE_PRESETS[_active_preset]['desc']}</span>"
-    f"</div>",
-    unsafe_allow_html=True,
-)
-
-_cols = st.columns(5)
-with _cols[0]:
-    dod = st.slider("DoD", 0.50, 1.00, step=0.05, key="ddr_dod")
-with _cols[1]:
-    fec = st.slider("Cycles/yr", 300, 1500, step=10, key="ddr_fec",
-                    help="Full-equivalent cycles per year. 730 ≈ 2/day.")
-with _cols[2]:
-    mean_soc = st.slider("Rest SoC", 0.20, 0.90, step=0.05, key="ddr_mean_soc",
-                         help="Average SoC between trades.")
-with _cols[3]:
-    c_rate = st.slider("C-rate", 0.10, 1.00, step=0.05, key="ddr_c_rate")
-with _cols[4]:
-    temp = st.slider("Cell T (°C)", 15, 40, step=1, key="ddr_temp")
-
-duty = DutyCycle.from_mean(
-    fec_per_year=float(fec),
-    mean_dod=float(dod),
-    mean_soc=float(mean_soc),
-    mean_crate=float(c_rate),
-    mean_temp_C=float(temp),
-)
-preset = PRESETS["baseline_fleet"]
-
-years = np.arange(0.0, 20.01, 0.5)
-rng = np.random.default_rng(0)
-rows = []
-for yr in years:
-    if yr <= 0:
-        rows.append((0.0, 1.0, 1.0, 1.0))
-        continue
-    p10, p50, p90 = project_capacity_detailed(
-        duty=duty, years=yr, preset=preset, n_mc=300, return_kind="distribution", rng=rng
-    )
-    rows.append((float(yr), p10, p50, p90))
-soh_df = pd.DataFrame(rows, columns=["year", "p10", "p50", "p90"])
-
-eol = preset.eol_capacity_fraction
-# Median (p50) to match the driver response curves above. The pack p10
-# convention used in revenue models runs ~10 % shorter; flagged in the
-# caption below the chart.
-below = soh_df[soh_df["p50"] <= eol]
-years_to_eol = float(below["year"].iloc[0]) if len(below) else float("nan")
-
-# Cost-of-cycle: replacement pack (≈180 €/kWh) amortised flat over lifetime
-# throughput in MWh. Schimpe 2018 LFP benchmark sits near 13 €/MWh.
-_PACK_REPLACEMENT_EUR_PER_KWH = 180.0
-_plant_capacity_mwh = float(st.session_state.get("lever_chart_capacity", 100.0))
-if not np.isnan(years_to_eol) and years_to_eol > 0 and dod > 0:
-    lifetime_mwh_per_kwh = years_to_eol * fec * dod / 1000.0
-    eur_per_mwh_cycle = _PACK_REPLACEMENT_EUR_PER_KWH / max(lifetime_mwh_per_kwh, 1e-6)
-    eur_per_cycle_metric = (
-        _PACK_REPLACEMENT_EUR_PER_KWH * _plant_capacity_mwh * 1000.0
-        / (years_to_eol * fec)
-    )
-    lifetime_mwh_plant = years_to_eol * fec * dod * _plant_capacity_mwh
-else:
-    eur_per_mwh_cycle = float("nan")
-    eur_per_cycle_metric = float("nan")
-    lifetime_mwh_plant = float("nan")
-
-col_a, col_b = st.columns([2, 1])
-with col_a:
-    f = go.Figure()
-    f.add_trace(go.Scatter(x=soh_df["year"], y=soh_df["p50"], name="median", line=dict(color="#0b5fff")))
-    f.add_trace(
-        go.Scatter(
-            x=np.concatenate([soh_df["year"], soh_df["year"][::-1]]),
-            y=np.concatenate([soh_df["p90"], soh_df["p10"][::-1]]),
-            fill="toself",
-            fillcolor="rgba(11,95,255,0.15)",
-            line=dict(color="rgba(0,0,0,0)"),
-            name="p10–p90",
+    preset_cols = st.columns(len(_INTERACTIVE_PRESETS))
+    for pc, name in zip(preset_cols, _INTERACTIVE_PRESETS.keys()):
+        pc.button(
+            name, on_click=_apply_preset, args=(name,),
+            use_container_width=True,
+            type="primary" if name == _active_preset else "secondary",
         )
+    st.markdown(
+        f"<div style='display:flex;gap:0.5em;align-items:baseline;"
+        f"margin:0.3em 0.2em 0.8em 0.2em;max-width:1000px;font-size:0.9em'>"
+        f"<span style='color:#1aa179;font-weight:700;flex-shrink:0'>"
+        f"{_active_preset} →</span>"
+        f"<span style='color:#444;text-wrap:pretty'>{_INTERACTIVE_PRESETS[_active_preset]['desc']}</span>"
+        f"</div>",
+        unsafe_allow_html=True,
     )
-    f.add_hline(y=eol, line_dash="dot", line_color="#888", annotation_text=f"EOL {int(eol*100)}%")
-    if not np.isnan(years_to_eol):
-        f.add_shape(
-            type="line",
-            x0=years_to_eol, x1=years_to_eol,
-            y0=0.5, y1=eol,
-            line=dict(color="#888", dash="dot", width=1),
+
+    _cols = st.columns(5)
+    with _cols[0]:
+        dod = st.slider("DoD", 0.50, 1.00, step=0.05, key="ddr_dod")
+    with _cols[1]:
+        fec = st.slider("Cycles/yr", 300, 1500, step=10, key="ddr_fec",
+                        help="Full-equivalent cycles per year. 730 ≈ 2/day.")
+    with _cols[2]:
+        mean_soc = st.slider("Rest SoC", 0.20, 0.90, step=0.05, key="ddr_mean_soc",
+                             help="Average SoC between trades.")
+    with _cols[3]:
+        c_rate = st.slider("C-rate", 0.10, 1.00, step=0.05, key="ddr_c_rate")
+    with _cols[4]:
+        temp = st.slider("Cell T (°C)", 15, 40, step=1, key="ddr_temp")
+
+    duty = DutyCycle.from_mean(
+        fec_per_year=float(fec),
+        mean_dod=float(dod),
+        mean_soc=float(mean_soc),
+        mean_crate=float(c_rate),
+        mean_temp_C=float(temp),
+    )
+    preset = PRESETS["baseline_fleet"]
+
+    years = np.arange(0.0, 20.01, 0.5)
+    rng = np.random.default_rng(0)
+    rows = []
+    for yr in years:
+        if yr <= 0:
+            rows.append((0.0, 1.0, 1.0, 1.0))
+            continue
+        p10, p50, p90 = project_capacity_detailed(
+            duty=duty, years=yr, preset=preset, n_mc=300, return_kind="distribution", rng=rng
         )
-        f.add_annotation(
-            x=years_to_eol, y=0.5,
-            text=f"{years_to_eol:.1f} yr",
-            showarrow=False,
-            yshift=12, xshift=22,
-            font=dict(color="#555", size=12),
+        rows.append((float(yr), p10, p50, p90))
+    soh_df = pd.DataFrame(rows, columns=["year", "p10", "p50", "p90"])
+
+    eol = preset.eol_capacity_fraction
+    # Median (p50) to match the driver response curves above. The pack p10
+    # convention used in revenue models runs ~10 % shorter; flagged in the
+    # caption below the chart.
+    below = soh_df[soh_df["p50"] <= eol]
+    years_to_eol = float(below["year"].iloc[0]) if len(below) else float("nan")
+
+    # Cost-of-cycle: replacement pack (≈180 €/kWh) amortised flat over lifetime
+    # throughput in MWh. Schimpe 2018 LFP benchmark sits near 13 €/MWh.
+    _PACK_REPLACEMENT_EUR_PER_KWH = 180.0
+    _plant_capacity_mwh = float(st.session_state.get("lever_chart_capacity", 100.0))
+    if not np.isnan(years_to_eol) and years_to_eol > 0 and dod > 0:
+        lifetime_mwh_per_kwh = years_to_eol * fec * dod / 1000.0
+        eur_per_mwh_cycle = _PACK_REPLACEMENT_EUR_PER_KWH / max(lifetime_mwh_per_kwh, 1e-6)
+        eur_per_cycle_metric = (
+            _PACK_REPLACEMENT_EUR_PER_KWH * _plant_capacity_mwh * 1000.0
+            / (years_to_eol * fec)
         )
+        lifetime_mwh_plant = years_to_eol * fec * dod * _plant_capacity_mwh
+    else:
+        eur_per_mwh_cycle = float("nan")
+        eur_per_cycle_metric = float("nan")
+        lifetime_mwh_plant = float("nan")
+
+    col_a, col_b = st.columns([2, 1])
+    with col_a:
+        f = go.Figure()
+        f.add_trace(go.Scatter(x=soh_df["year"], y=soh_df["p50"], name="median", line=dict(color="#0b5fff")))
         f.add_trace(
             go.Scatter(
-                x=[years_to_eol], y=[eol],
-                mode="markers",
-                marker=dict(color="#0b5fff", size=8, symbol="circle"),
-                showlegend=False,
-                hovertemplate=f"EOL crossing: {years_to_eol:.1f} yr<extra></extra>",
+                x=np.concatenate([soh_df["year"], soh_df["year"][::-1]]),
+                y=np.concatenate([soh_df["p90"], soh_df["p10"][::-1]]),
+                fill="toself",
+                fillcolor="rgba(11,95,255,0.15)",
+                line=dict(color="rgba(0,0,0,0)"),
+                name="p10–p90",
             )
         )
-    f.update_layout(
-        xaxis_title="years",
-        yaxis_title="SoH",
-        yaxis=dict(range=[0.5, 1.0]),
-        height=360,
-        margin=dict(l=10, r=10, t=10, b=10),
-    )
-    st.plotly_chart(f, use_container_width=True, config={"displayModeBar": False})
-with col_b:
-    if not np.isnan(lifetime_mwh_plant):
-        _mwh_disp = (
-            f"{lifetime_mwh_plant/1000:,.1f}k"
-            if lifetime_mwh_plant >= 1000
-            else f"{lifetime_mwh_plant:,.0f}"
+        f.add_hline(y=eol, line_dash="dot", line_color="#888", annotation_text=f"EOL {int(eol*100)}%")
+        if not np.isnan(years_to_eol):
+            f.add_shape(
+                type="line",
+                x0=years_to_eol, x1=years_to_eol,
+                y0=0.5, y1=eol,
+                line=dict(color="#888", dash="dot", width=1),
+            )
+            f.add_annotation(
+                x=years_to_eol, y=0.5,
+                text=f"{years_to_eol:.1f} yr",
+                showarrow=False,
+                yshift=12, xshift=22,
+                font=dict(color="#555", size=12),
+            )
+            f.add_trace(
+                go.Scatter(
+                    x=[years_to_eol], y=[eol],
+                    mode="markers",
+                    marker=dict(color="#0b5fff", size=8, symbol="circle"),
+                    showlegend=False,
+                    hovertemplate=f"EOL crossing: {years_to_eol:.1f} yr<extra></extra>",
+                )
+            )
+        f.update_layout(
+            xaxis_title="years",
+            yaxis_title="SoH",
+            yaxis=dict(range=[0.5, 1.0]),
+            height=360,
+            margin=dict(l=10, r=10, t=10, b=10),
         )
-    else:
-        _mwh_disp = "—"
-    st.metric(f"Lifetime MWh delivered ({_plant_capacity_mwh:.0f} MWh plant)", _mwh_disp)
-    st.metric("Years to EOL (median cell)",  f"{years_to_eol:.1f}" if not np.isnan(years_to_eol) else "> 20")
-    st.metric(
-        "€ per MWh wear",
-        f"€{eur_per_mwh_cycle:.1f}" if not np.isnan(eur_per_mwh_cycle) else "—",
-    )
-    if not np.isnan(eur_per_cycle_metric):
-        _cyc_disp = (
-            f"€{eur_per_cycle_metric/1000:,.1f}k"
-            if eur_per_cycle_metric >= 1000
-            else f"€{eur_per_cycle_metric:,.0f}"
+        st.plotly_chart(f, use_container_width=True, config={"displayModeBar": False})
+    with col_b:
+        if not np.isnan(lifetime_mwh_plant):
+            _mwh_disp = (
+                f"{lifetime_mwh_plant/1000:,.1f}k"
+                if lifetime_mwh_plant >= 1000
+                else f"{lifetime_mwh_plant:,.0f}"
+            )
+        else:
+            _mwh_disp = "—"
+        st.metric(f"Lifetime MWh delivered ({_plant_capacity_mwh:.0f} MWh plant)", _mwh_disp)
+        st.metric("Years to EOL (median cell)",  f"{years_to_eol:.1f}" if not np.isnan(years_to_eol) else "> 20")
+        st.metric(
+            "€ per MWh wear",
+            f"€{eur_per_mwh_cycle:.1f}" if not np.isnan(eur_per_mwh_cycle) else "—",
         )
-    else:
-        _cyc_disp = "—"
-    st.metric(f"€ per cycle ({_plant_capacity_mwh:.0f} MWh plant)", _cyc_disp)
-    if not (preset.temp_range_C[0] <= temp <= preset.temp_range_C[1]):
-        st.warning(f"Temperature outside preset range {preset.temp_range_C}.")
-    if c_rate > 2.0:
-        st.warning("C-rate above calibration range (>2C).")
+        if not np.isnan(eur_per_cycle_metric):
+            _cyc_disp = (
+                f"€{eur_per_cycle_metric/1000:,.1f}k"
+                if eur_per_cycle_metric >= 1000
+                else f"€{eur_per_cycle_metric:,.0f}"
+            )
+        else:
+            _cyc_disp = "—"
+        st.metric(f"€ per cycle ({_plant_capacity_mwh:.0f} MWh plant)", _cyc_disp)
+        if not (preset.temp_range_C[0] <= temp <= preset.temp_range_C[1]):
+            st.warning(f"Temperature outside preset range {preset.temp_range_C}.")
+        if c_rate > 2.0:
+            st.warning("C-rate above calibration range (>2C).")
 
-st.caption(
-    "€/MWh wear = replacement cost (\\~180 €/kWh) divided across lifetime discharge MWh. "
-    "**€ per cycle** is the same number scaled to plant size: multiply €/MWh by the MWh one cycle "
-    "delivers (DoD × plant capacity). For an 80 % DoD cycle on a 100 MWh plant, that's €/MWh × 80. "
-    "Schimpe 2018 benchmarked \\~13 €/MWh at 2018-era CAPEX (\\~€80/kWh); at today's €180/kWh the "
-    "same arithmetic gives \\~€30/MWh."
-)
+    st.caption(
+        "€/MWh wear = replacement cost (\\~180 €/kWh) divided across lifetime discharge MWh. "
+        "**€ per cycle** is the same number scaled to plant size: multiply €/MWh by the MWh one cycle "
+        "delivers (DoD × plant capacity). For an 80 % DoD cycle on a 100 MWh plant, that's €/MWh × 80. "
+        "Schimpe 2018 benchmarked \\~13 €/MWh at 2018-era CAPEX (\\~€80/kWh); at today's €180/kWh the "
+        "same arithmetic gives \\~€30/MWh."
+    )
+
+
+_interactive_block()
 
 # ── Methodology ─────────────────────────────────────────────
 st.markdown("---")
