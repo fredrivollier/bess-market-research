@@ -681,9 +681,22 @@ def _interactive_block() -> None:
     eol = preset.eol_capacity_fraction
     # Median (p50) to match the driver response curves above. The pack p10
     # convention used in revenue models runs ~10 % shorter; flagged in the
-    # caption below the chart.
-    below = soh_df[soh_df["p50"] <= eol]
-    years_to_eol = float(below["year"].iloc[0]) if len(below) else float("nan")
+    # caption below the chart. Linear-interpolate between the sampled
+    # points bracketing the threshold so the marker lands on the curve.
+    _mask_below = soh_df["p50"].to_numpy() <= eol
+    if _mask_below.any():
+        _i = int(np.argmax(_mask_below))
+        if _i == 0:
+            years_to_eol = float(soh_df["year"].iloc[0])
+        else:
+            y0 = float(soh_df["p50"].iloc[_i - 1])
+            y1 = float(soh_df["p50"].iloc[_i])
+            x0 = float(soh_df["year"].iloc[_i - 1])
+            x1 = float(soh_df["year"].iloc[_i])
+            frac = (y0 - eol) / (y0 - y1) if y0 != y1 else 0.0
+            years_to_eol = x0 + frac * (x1 - x0)
+    else:
+        years_to_eol = float("nan")
 
     # Cost-of-cycle: replacement pack (≈180 €/kWh) amortised flat over lifetime
     # throughput in MWh. Schimpe 2018 LFP benchmark sits near 13 €/MWh.
